@@ -1,0 +1,2470 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Teacher Attendance App</title>
+    
+    <!-- Placeholder Comments -->
+    <!-- Chosen Palette: Warm Neutrals (Slate, Stone, Teal) -->
+    <!-- Application Structure Plan: A single-page application (SPA) architecture is used to provide a fast, seamless user experience without page reloads, which is ideal for a mobile-first utility app. The application state determines which "view" (Login, Teacher, Admin) is visible. Navigation within the Teacher and Admin views dynamically swaps content in a main container, simulating a multi-page app while maintaining SPA performance. This role-based structure cleanly separates functionalities and simplifies the user flow. -->
+    <!-- Visualization & Content Choices: 
+        - Goal: Inform -> Presentation: Dashboard Stat Cards with Icons (HTML/CSS) -> Interaction: Clickable for details -> Justification: Provides a quick, scannable overview of key metrics for admins and teachers.
+        - Goal: Organize/Input -> Presentation: Lists with Radio Toggles/Forms (HTML) -> Interaction: Form submission -> Justification: Fast, intuitive data entry for teachers on mobile, especially for marking attendance.
+        - Goal: Compare/Analyze -> Presentation: Interactive Bar/Line Charts (Chart.js on Canvas) -> Interaction: Dropdown filters to update chart data -> Justification: Dynamic visualization is more insightful and engaging for analyzing trends than static tables.
+        - Goal: Automate/Assist -> Presentation: AI-powered buttons (✨) -> Interaction: Click to call Gemini API for text generation (leave reasons, summaries, email drafts) -> Justification: Reduces manual effort for common writing tasks and provides intelligent insights.
+        - All diagrams and icons are built with structured HTML/CSS and Unicode to adhere to the NO SVG constraint.
+    -->
+    <!-- CONFIRMATION: NO SVG graphics used. NO Mermaid JS used. -->
+
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+            -webkit-font-smoothing: antialiased;
+            -moz-osx-font-smoothing: grayscale;
+        }
+        .chart-container {
+            position: relative;
+            width: 100%;
+            max-width: 700px;
+            margin-left: auto;
+            margin-right: auto;
+            height: 400px;
+            max-height: 50vh;
+        }
+        .fade-in {
+            animation: fadeIn 0.5s ease-in-out;
+        }
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+        .spinner {
+            border: 2px solid rgba(0, 0, 0, 0.1);
+            width: 16px;
+            height: 16px;
+            border-radius: 50%;
+            border-left-color: #0d9488;
+            animation: spin 1s linear infinite;
+        }
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+    </style>
+</head>
+<body class="bg-stone-50 text-slate-800">
+
+    <div id="app" class="min-h-screen">
+
+        <!-- LOGIN VIEW -->
+        <div id="loginView" class="flex items-center justify-center min-h-screen p-4">
+            <div class="w-full max-w-md">
+                <div class="text-center mb-8">
+                    <h1 class="text-3xl font-bold text-teal-700">School Portal</h1>
+                    <p class="text-slate-500 mt-2">Please sign in to your account</p>
+                </div>
+                <div class="bg-white p-8 rounded-2xl shadow-lg">
+                    <form id="loginForm">
+                        <div class="mb-4">
+                            <label for="loginId" id="loginIdLabel" class="block text-sm font-medium text-slate-600 mb-1">Email</label>
+                            <input type="text" id="loginId" class="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-teal-500 focus:border-teal-500" placeholder="user@school.com" required>
+                        </div>
+                        <div class="mb-6">
+                            <label for="password" id="loginPasswordLabel" class="block text-sm font-medium text-slate-600 mb-1">Password</label>
+                            <input type="password" id="password" class="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-teal-500 focus:border-teal-500" placeholder="password" required>
+                        </div>
+                         <div class="mb-6">
+                            <label for="role" class="block text-sm font-medium text-slate-600 mb-1">Role</label>
+                            <select id="role" class="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-teal-500 focus:border-teal-500">
+                                <option value="teacher">Teacher</option>
+                                <option value="admin">Admin</option>
+                                <option value="student">Student</option>
+                            </select>
+                        </div>
+                        <p id="loginError" class="text-red-500 text-sm mb-4 hidden"></p>
+                        <button type="submit" class="w-full bg-teal-600 text-white py-2 rounded-lg hover:bg-teal-700 transition duration-300 font-semibold">Sign In</button>
+                    </form>
+                </div>
+                <div id="loginHint" class="text-center mt-4 text-sm text-slate-400">
+                    <p>Use `teacher@school.com` or `admin@school.com`</p>
+                    <p>Password: `password`</p>
+                </div>
+            </div>
+        </div>
+
+        <!-- MAIN APP VIEW (Teacher/Admin/Student) -->
+        <div id="mainAppView" class="hidden">
+            <div class="flex flex-col md:flex-row min-h-screen">
+                <!-- Sidebar Navigation (Desktop) -->
+                <nav id="desktopNav" class="hidden md:flex md:flex-col md:w-64 bg-white shadow-md">
+                    <div class="p-4 border-b">
+                        <h2 class="text-xl font-bold text-teal-700">School Portal</h2>
+                        <p id="desktopUser" class="text-sm text-slate-500"></p>
+                    </div>
+                    <div id="desktopNavLinks" class="flex-grow p-4 space-y-2">
+                        <!-- Links injected by JS -->
+                    </div>
+                    <div class="p-4 border-t">
+                        <button id="logoutBtnDesktop" class="w-full text-left text-slate-600 hover:bg-stone-100 p-2 rounded-lg transition flex items-center gap-3 font-medium">
+                            <span class="text-xl">🚪</span>
+                            <span>Logout</span>
+                        </button>
+                    </div>
+                </nav>
+
+                <!-- Main Content Area -->
+                <main class="flex-1 bg-stone-50 p-4 sm:p-6 lg:p-8 pb-24 md:pb-8">
+                    <div id="mainContent" class="w-full max-w-7xl mx-auto">
+                        <!-- Content injected by JS -->
+                    </div>
+                </main>
+            </div>
+
+            <!-- Bottom Navigation (Mobile) -->
+            <nav id="mobileNav" class="md:hidden fixed bottom-0 left-0 right-0 bg-white shadow-t border-t border-slate-200 flex justify-around p-2">
+                <!-- Links injected by JS -->
+            </nav>
+        </div>
+
+        <!-- Generic Modal -->
+        <div id="modal" class="hidden fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
+            <div id="modalDialog" class="bg-white rounded-2xl shadow-xl p-6 w-full max-w-md transform transition-all duration-300 scale-95 opacity-0">
+                <h3 id="modalTitle" class="text-xl font-bold mb-4"></h3>
+                <div id="modalContent" class="text-slate-600 mb-6"></div>
+                <div id="modalActions" class="flex justify-end gap-2">
+                    <!-- Buttons will be added here -->
+                </div>
+            </div>
+        </div>
+
+    </div>
+
+    <script>
+        // --- MOCK DATA ---
+        const mockData = {
+            users: [
+                { id: 1, teacherId: 'TCH1001', name: 'Priya Sharma', email: 'teacher@school.com', password: 'password', role: 'teacher', status: 'active', passwordChanged: true, qualifications: 'M.A. in English Literature', profilePicUrl: 'https://placehold.co/128x128/e9d5ff/4c1d95?text=PS' },
+                { id: 2, name: 'Raj Singh (Principal)', email: 'admin@school.com', password: 'password', role: 'admin', status: 'active', passwordChanged: true },
+                { id: 3, teacherId: 'TCH1002', name: 'Anjali Gupta', email: 'teacher2@school.com', password: 'password', role: 'teacher', status: 'active', passwordChanged: true, qualifications: 'M.Sc. in Physics', profilePicUrl: 'https://placehold.co/128x128/c7d2fe/312e81?text=AG' },
+                { id: 4, teacherId: 'TCH1003', name: 'Vikram Rathore', email: 'teacher3@school.com', password: 'password', role: 'teacher', status: 'active', passwordChanged: true, qualifications: 'B.Ed, M.A. in History', profilePicUrl: 'https://placehold.co/128x128/bbf7d0/14532d?text=VR' },
+                { id: 5, teacherId: 'TCH1004', name: 'Sunita Menon', email: 'teacher4@school.com', password: 'password', role: 'teacher', status: 'active', passwordChanged: true, qualifications: 'M.Sc. in Chemistry', profilePicUrl: 'https://placehold.co/128x128/fecaca/7f1d1d?text=SM' },
+                { id: 6, teacherId: 'TCH1005', name: 'Ravi Kumar', email: 'teacher5@school.com', password: 'password', role: 'teacher', status: 'active', passwordChanged: true, qualifications: 'MCA', profilePicUrl: 'https://placehold.co/128x128/a5f3fc/0e7490?text=RK' },
+                { id: 7, teacherId: 'TCH1006', name: 'Meera Desai', email: 'teacher6@school.com', password: 'password', role: 'teacher', status: 'active', passwordChanged: true, qualifications: 'M.A. in Hindi', profilePicUrl: 'https://placehold.co/128x128/fed7aa/854d0e?text=MD' },
+                { id: 8, teacherId: 'TCH1007', name: 'Sanjay Joshi', email: 'teacher7@school.com', password: 'password', role: 'teacher', status: 'active', passwordChanged: true, qualifications: 'M.Sc. in Mathematics', profilePicUrl: 'https://placehold.co/128x128/d1d5db/1f2937?text=SJ' },
+                { id: 9, teacherId: 'TCH1008', name: 'Kavita Iyer', email: 'teacher8@school.com', password: 'password', role: 'teacher', status: 'active', passwordChanged: true, qualifications: 'B.P.Ed (Physical Education)', profilePicUrl: 'https://placehold.co/128x128/fbcfe8/86198f?text=KI' },
+            ],
+            students: {}, // Will be populated dynamically
+            classes: [
+                { id: 'C1', name: 'Grade 1 - Section A', teacherId: null }, 
+                { id: 'C2', name: 'Grade 2 - Section A', teacherId: null },
+                { id: 'C3', name: 'Grade 3 - Section A', teacherId: null }, 
+                { id: 'C4', name: 'Grade 4 - Section A', teacherId: null },
+                { id: 'C5', name: 'Grade 5 - Section A', teacherId: null }, 
+                { id: 'C6', name: 'Grade 6 - Section A', teacherId: null },
+                { id: 'C7', name: 'Grade 7 - Section A', teacherId: null }, 
+                { id: 'C8', name: 'Grade 8 - Section A', teacherId: null },
+            ],
+            subjects: [
+                { id: 'S1', name: 'English' }, { id: 'S2', name: 'Hindi' }, { id: 'S3', name: 'Mathematics' },
+                { id: 'S4', name: 'Science' }, { id: 'S5', name: 'Social Studies' }, { id: 'S6', name: 'Computer Science' },
+                { id: 'S7', name: 'Art & Craft' }, { id: 'S8', name: 'Physical Education' }
+            ],
+            schedule: [], // Populated dynamically
+            attendance: [], // Populated dynamically
+            teacherAttendance: [],
+            leaves: [
+                { id: 1, teacherId: 3, teacherName: 'Anjali Gupta', startDate: '2025-07-25', endDate: '2025-07-26', reason: 'Family function', status: 'Pending' },
+                { id: 2, teacherId: 1, teacherName: 'Priya Sharma', startDate: '2025-07-21', endDate: '2025-07-21', reason: 'Medical appointment', status: 'Approved' },
+            ],
+            announcements: [
+                { id: 1, date: '2025-07-22', title: 'Annual Sports Day', content: 'The Annual Sports Day will be held next Friday. All students are requested to participate.'},
+                { id: 2, date: '2025-07-20', title: 'Parent-Teacher Meeting', content: 'The quarterly Parent-Teacher Meeting is scheduled for this Saturday. Please book your slots.'}
+            ],
+           exams: [
+                { id: 1, name: 'Unit Test 1', date: '2025-05-15', maxMarks: 25 },
+                { id: 2, name: 'Mid-Term Examination', date: '2025-09-20', maxMarks: 100 }
+            ],
+            marks: [],
+        };
+
+        // --- DYNAMIC DATA GENERATION ---
+        function generateMockData() {
+            const studentNames = [
+                "Aarav Sharma", "Vivaan Singh", "Aditya Kumar", "Vihaan Gupta", "Arjun Patel", "Sai Reddy", "Reyansh Mishra", "Krishna Verma", "Ishaan Yadav", "Rohan Prasad", "Aanya Joshi", "Diya Mehra", "Saanvi Agarwal", "Myra Khanna", "Anika Nair", "Kiara Iyer", "Zara Khan", "Pari Shah", "Advika Menon", "Ishita Rao", "Kabir Das", "Aryan Chaudhary", "Dhruv Jain", "Zayn Ali", "Ayaan Kumar", "Kian Sharma", "Shaurya Singh", "Atharv Gupta", "Dev Patel", "Neel Reddy", "Anvi Mishra", "Siya Verma", "Aadhya Yadav", "Navya Prasad", "Riya Joshi", "Prisha Mehra", "Anaya Agarwal", "Yashvi Khanna", "Amaira Nair", "Miraya Iyer", "Laksh Kumar", "Veer Singh", "Abir Gupta", "Yuvan Patel", "Samarth Reddy", "Aarush Mishra", "Rudra Verma", "Om Yadav", "Parth Prasad", "Jai Joshi", "Shanaya Mehra", "Aarohi Agarwal", "Amara Khanna", "Eva Nair", "Inaya Iyer", "Sia Khan", "Tara Shah", "Avni Menon", "Zoya Rao", "Aisha Das", "Arnav Chaudhary", "Advik Jain", "Aadi Ali", "Arin Kumar", "Vivaan Sharma", "Yash Singh", "Ved Gupta", "Zain Patel", "Manan Reddy", "Arham Mishra", "Ahaana Verma", "Akshara Yadav", "Alia Prasad", "Amrita Joshi", "Anisha Mehra", "Asmi Agarwal", "Avani Khanna", "Bhavya Nair", "Charvi Iyer", "Darshini Khan", "Daksh Shah", "Divit Menon", "Ehan Rao", "Ekansh Das", "Gaurav Chaudhary", "Harsh Jain", "Hridhaan Ali", "Ivaan Kumar", "Jivin Sharma", "Krish Singh", "Ira Gupta", "Jiya Patel", "Kashvi Reddy", "Keya Mishra", "Kimaya Verma", "Larisa Yadav", "Mahi Prasad", "Mishka Joshi", "Naisha Mehra", "Navi Agarwal", "Nirvaan Khanna", "Ojas Nair", "Pahal Iyer", "Parv Khan", "Pranay Shah", "Ranbir Menon", "Rehan Rao", "Ritvik Das", "Rishaan Chaudhary", "Samar Jain", "Nitara Ali", "Oviya Kumar", "Piya Sharma", "Pranavi Singh", "Radha Gupta", "Rhea Patel", "Saira Reddy", "Samaira Mishra", "Sanvi Verma", "Shreya Yadav", "Soham Prasad", "Tanish Joshi", "Tejas Mehra", "Uthkarsh Agarwal", "Vansh Khanna", "Vidit Nair", "Viraj Iyer", "Yug Khan", "Aarav Shah", "Vivaan Menon", "Tisha Rao", "Urvi Das", "Vanya Chaudhary", "Vedika Jain", "Yashika Ali", "Zara Kumar", "Aaditri Sharma", "Aahana Singh", "Aaradhya Gupta", "Aarvi Patel", "Adah Reddy", "Adira Mishra", "Advaita Verma", "Ahana Yadav", "Alisha Prasad", "Amoli Joshi", "Anvi Mehra", "Anya Agarwal", "Asmi Khanna", "Avni Nair", "Ayush Iyer", "Bhargav Khan", "Chirag Shah", "Darsh Menon", "Deepak Rao", "Devansh Das", "Dhairya Chaudhary", "Divyansh Jain", "Gagan Ali", "Gautam Kumar", "Bhavna Sharma", "Charul Singh", "Daksha Gupta", "Deepa Patel", "Devaki Reddy", "Dhriti Mishra", "Divya Verma", "Eesha Yadav", "Eila Prasad", "Falak Joshi", "Girik Mehra", "Harshil Agarwal", "Hemant Khanna", "Hitesh Nair", "Indra Iyer", "Ishank Khan", "Jagat Shah", "Jay Menon", "Jignesh Rao", "Kairav Das", "Gargi Chaudhary", "Geeta Jain", "Gitanjali Ali", "Hamsa Kumar", "Harinakshi Sharma", "Heer Singh", "Hetal Gupta", "Indira Patel", "Ipsita Reddy", "Ishani Mishra", "Kanan Verma", "Karan Yadav", "Kartik Prasad", "Kushal Joshi", "Lalit Mehra", "Madhav Agarwal", "Manish Khanna", "Mayank Nair", "Mohit Iyer", "Naman Khan", "Jahnavi Shah", "Janaki Menon", "Jeevika Rao", "Kajal Das", "Kalpana Chaudhary", "Kamala Jain", "Kanak Ali", "Kanti Kumar", "Karishma Sharma", "Kavita Singh", "Nakul Gupta", "Naveen Patel", "Nihal Reddy", "Nikhil Mishra", "Nishant Verma", "Nitin Yadav", "Omprakash Prasad", "Pankaj Joshi", "Piyush Mehra", "Pranav Agarwal", "Lata Gupta", "Lavanya Patel", "Leela Reddy", "Madhu Mishra", "Malini Verma", "Manju Yadav", "Maya Prasad", "Meena Joshi", "Meera Mehra", "Mohini Agarwal", "Prateek Khanna", "Raghav Nair", "Rajat Iyer", "Rakesh Khan", "Ravi Shah", "Rishi Menon", "Rohit Rao", "Sachin Das", "Sahil Chaudhary", "Sameer Jain", "Nalini Khanna", "Nandini Nair", "Neelam Iyer", "Neha Khan", "Nidhi Shah", "Nilima Menon", "Nirmala Rao", "Nisha Das", "Nita Chaudhary", "Pallavi Jain", "Sanjay Ali", "Sarthak Kumar", "Saurabh Sharma", "Shaurya Singh", "Shiva Gupta", "Siddharth Patel", "Sumit Reddy", "Sunil Mishra", "Suresh Verma", "Tanmay Yadav", "Pooja Ali", "Poonam Kumar", "Prabha Sharma", "Pratima Singh", "Preeti Gupta", "Priya Patel", "Radhika Reddy", "Rajani Mishra", "Rani Verma", "Rashmi Yadav", "Tushar Prasad", "Uday Joshi", "Varun Mehra", "Vikas Agarwal", "Vinay Khanna", "Vishal Nair", "Vivek Iyer", "Yash Khan", "Yogesh Shah", "Zubin Menon", "Rekha Prasad", "Renu Joshi", "Ritika Mehra", "Ritu Agarwal", "Rohini Khanna", "Roshni Nair", "Rupa Iyer", "Sabita Khan", "Sadhana Shah", "Sandhya Menon", "Sangeeta Rao", "Sarika Das", "Sarita Chaudhary", "Savita Jain", "Seema Ali", "Shaila Kumar", "Shalini Sharma", "Shanti Singh", "Sharda Gupta", "Sharmila Patel"
+            ];
+
+            let studentIdCounter = 1001;
+            mockData.classes.forEach(cls => {
+                mockData.students[cls.id] = [];
+                const studentCount = 40 + Math.floor(Math.random() * 11);
+                for (let i = 0; i < studentCount; i++) {
+                    const randomNameIndex = Math.floor(Math.random() * studentNames.length);
+                    const randomName = studentNames.splice(randomNameIndex, 1)[0] || `Student ${studentIdCounter}`;
+                    const year = 2015 - parseInt(cls.id.substring(1));
+                    const dob = `${year}-${String(Math.floor(Math.random()*12)+1).padStart(2,'0')}-${String(Math.floor(Math.random()*28)+1).padStart(2,'0')}`;
+                    mockData.students[cls.id].push({ 
+                        id: studentIdCounter, 
+                        studentId: String(Math.floor(1000000000 + Math.random() * 9000000000)),
+                        name: randomName,
+                        dob: dob,
+                        classId: cls.id,
+                        profilePicUrl: `https://placehold.co/128x128/0d9488/ffffff?text=${randomName.charAt(0)}`
+                    });
+                    studentIdCounter++;
+                }
+            });
+            
+            const firstStudent = mockData.students['C1'][0];
+            mockData.users.push({
+                id: firstStudent.id, name: firstStudent.name, email: firstStudent.studentId, password: firstStudent.dob, role: 'student', status: 'active', passwordChanged: true, studentId: firstStudent.id
+            });
+
+
+            const defaultScheduleSubjects = ['S3', 'S1', 'S4', 'S2', 'S5', 'S8']; // Math, English, Science, Hindi, Social, PE
+            mockData.classes.forEach(cls => {
+                for (let i = 0; i < 6; i++) {
+                    mockData.schedule.push({
+                        classId: cls.id,
+                        period: i + 1,
+                        subjectId: defaultScheduleSubjects[i],
+                        teacherId: null 
+                    });
+                }
+            });
+
+            const teachers = mockData.users.filter(u => u.role === 'teacher' && u.status === 'active');
+            let teacherIndex = 0;
+            for (let period = 1; period <= 6; period++) {
+                for (let c = 0; c < mockData.classes.length; c++) {
+                    const classId = mockData.classes[c].id;
+                    const slot = mockData.schedule.find(s => s.classId === classId && s.period === period);
+                    
+                    let assigned = false;
+                    for (let i = 0; i < teachers.length; i++) {
+                        const teacher = teachers[teacherIndex % teachers.length];
+                        teacherIndex++;
+                        
+                        const isBusy = mockData.schedule.some(s => s.period === period && s.teacherId === teacher.id);
+                        const totalLoad = mockData.schedule.filter(s => s.teacherId === teacher.id).length;
+
+                        if (!isBusy && totalLoad < 6) {
+                            slot.teacherId = teacher.id;
+                            assigned = true;
+                            break;
+                        }
+                    }
+                }
+            }
+            
+            const availableTeachers = [...teachers];
+            mockData.classes.forEach(cls => {
+                if (availableTeachers.length > 0) {
+                    cls.teacherId = availableTeachers.shift().id;
+                }
+            });
+
+            const today = new Date();
+            for (let i = 0; i < 365; i++) {
+                const date = new Date(today);
+                date.setDate(today.getDate() - i);
+                const dayOfWeek = date.getDay();
+
+                if (dayOfWeek === 0 || dayOfWeek === 6) continue;
+
+                const dateString = date.toISOString().split('T')[0];
+
+                mockData.classes.forEach(cls => {
+                    mockData.students[cls.id].forEach(student => {
+                        for (let period = 1; period <= 6; period++) {
+                             const rand = Math.random();
+                            let status = 'Present';
+                            if (rand > 0.95) status = 'Absent';
+                            else if (rand > 0.9) status = 'Late';
+                            mockData.attendance.push({ date: dateString, classId: cls.id, period, studentId: student.id, status });
+                        }
+                    });
+                });
+                
+                teachers.forEach(teacher => {
+                    const rand = Math.random();
+                    let status = 'Present';
+                    if(rand > 0.98) status = 'On Leave';
+                    mockData.teacherAttendance.push({ teacherId: teacher.id, date: dateString, status });
+                });
+            }
+            
+            mockData.exams.forEach(exam => {
+                mockData.classes.forEach(cls => {
+                    mockData.students[cls.id].forEach(student => {
+                        mockData.subjects.forEach(subject => {
+                            const marksObtained = Math.floor(exam.maxMarks * (0.4 + Math.random() * 0.6));
+                            mockData.marks.push({
+                                id: Date.now() + student.id + subject.id + exam.id,
+                                studentId: student.id,
+                                classId: cls.id,
+                                subjectId: subject.id,
+                                examId: exam.id,
+                                marksObtained: marksObtained
+                            });
+                        });
+                    });
+                });
+            });
+        }
+        generateMockData();
+
+        // --- APP STATE ---
+        const appState = {
+            currentUser: null,
+            currentView: 'login',
+            currentScreen: 'dashboard',
+            activeChart: null,
+        };
+
+        // --- DOM ELEMENTS ---
+        const loginView = document.getElementById('loginView');
+        const mainAppView = document.getElementById('mainAppView');
+        const loginForm = document.getElementById('loginForm');
+        const loginError = document.getElementById('loginError');
+        const mainContent = document.getElementById('mainContent');
+        const desktopNavLinks = document.getElementById('desktopNavLinks');
+        const mobileNav = document.getElementById('mobileNav');
+        const desktopUser = document.getElementById('desktopUser');
+        const logoutBtnDesktop = document.getElementById('logoutBtnDesktop');
+        const modal = document.getElementById('modal');
+        const modalDialog = document.getElementById('modalDialog');
+        const modalTitle = document.getElementById('modalTitle');
+        const modalContent = document.getElementById('modalContent');
+        const modalActions = document.getElementById('modalActions');
+
+        // --- GEMINI API HELPER ---
+        async function callGeminiAPI(prompt) {
+            try {
+                const payload = { contents: [{ role: "user", parts: [{ text: prompt }] }] };
+                const apiKey = ""; 
+                const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`;
+
+                const response = await fetch(apiUrl, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                });
+
+                if (!response.ok) {
+                    throw new Error(`API call failed with status: ${response.status}`);
+                }
+
+                const result = await response.json();
+
+                if (result.candidates && result.candidates[0]?.content?.parts?.[0]?.text) {
+                    return result.candidates[0].content.parts[0].text;
+                } else {
+                    throw new Error('Unexpected API response structure');
+                }
+            } catch (error) {
+                console.error("Gemini API Error:", error);
+                return "Sorry, an error occurred while generating a response.";
+            }
+        }
+
+        // --- MODAL HELPER ---
+        function showModal(title, content, actions) {
+            modalTitle.textContent = title;
+            modalContent.innerHTML = content;
+            modalActions.innerHTML = actions.map(action => 
+                `<button class="${action.classes}" onclick="${action.handler}">${action.label}</button>`
+            ).join('');
+            modal.classList.remove('hidden');
+            setTimeout(() => {
+                modalDialog.classList.remove('scale-95', 'opacity-0');
+            }, 10);
+        }
+
+        function hideModal() {
+            modalDialog.classList.add('scale-95', 'opacity-0');
+            setTimeout(() => {
+                modal.classList.add('hidden');
+            }, 300);
+        }
+        window.hideModal = hideModal;
+
+        // --- NAVIGATION & ROUTING ---
+         const teacherNavItems = [
+            { id: 'dashboard', label: 'Dashboard', icon: '🏠' },
+            { id: 'mySchedule', label: 'My Schedule', icon: '🗓️' },
+            { id: 'enterMarks', label: 'Enter Marks', icon: '📝' },
+            { id: 'attendanceHistory', label: 'History', icon: '📜' },
+            { id: 'leaves', label: 'Apply Leave', icon: '✉️' },
+            { id: 'profile', label: 'Profile', icon: '👤' }
+        ];
+
+        const adminNavItems = [
+            { id: 'dashboard', label: 'Dashboard', icon: '📊' },
+            { id: 'announcements', label: 'Announcements', icon: '📢' },
+            { id: 'manageExams', label: 'Manage Exams', icon: '📝' },
+            { id: 'manageLeaves', label: 'Manage Leaves', icon: '✉️' },
+            { id: 'manageTeachers', label: 'Teachers', icon: '👥' },
+            { id: 'manageClasses', label: 'Classes', icon: '🏫' },
+            { id: 'manageSchedule', label: 'Schedule', icon: '🗓️' },
+            { id: 'reports', label: 'Reports', icon: '📈' }
+        ];
+        
+        const studentNavItems = [
+            { id: 'dashboard', label: 'Dashboard', icon: '🏠' },
+            { id: 'mySchedule', label: 'My Schedule', icon: '🗓️' },
+            { id: 'reportCard', label: 'Report Card', icon: '📄' },
+            { id: 'attendance', label: 'Attendance', icon: '✔️' },
+            { id: 'announcements', label: 'Announcements', icon: '📢' },
+            { id: 'profile', label: 'Profile', icon: '👤' }
+        ];
+
+        function navigateToScreen(screenId) {
+            appState.currentScreen = screenId;
+            updateNavActiveState();
+            renderMainContent();
+        }
+
+        function updateNavActiveState() {
+            desktopNavLinks.querySelectorAll('button').forEach(btn => {
+                btn.classList.toggle('bg-teal-50', btn.dataset.screen === appState.currentScreen);
+                btn.classList.toggle('text-teal-700', btn.dataset.screen === appState.currentScreen);
+            });
+            mobileNav.querySelectorAll('button[data-screen]').forEach(btn => {
+                btn.classList.toggle('text-teal-600', btn.dataset.screen === appState.currentScreen);
+                btn.classList.toggle('text-slate-500', btn.dataset.screen !== appState.currentScreen);
+            });
+        }
+
+        function renderMainContent() {
+            if (appState.activeChart) {
+                appState.activeChart.destroy();
+                appState.activeChart = null;
+            }
+            mainContent.innerHTML = '';
+            mainContent.classList.add('fade-in');
+            setTimeout(() => mainContent.classList.remove('fade-in'), 500);
+
+            const role = appState.currentUser.role;
+            const screen = appState.currentScreen;
+
+            if (role === 'teacher') {
+                if (screen === 'dashboard') renderTeacherDashboard();
+                else if (screen === 'mySchedule') renderMySchedule();
+                else if (screen === 'enterMarks') renderEnterMarksSelector();
+                else if (screen === 'attendanceHistory') renderTeacherAttendanceHistory();
+                else if (screen === 'leaves') renderLeaveApplication();
+                else if (screen === 'profile') renderUserProfile();
+            } else if (role === 'admin') {
+                if (screen === 'dashboard') renderAdminDashboard();
+                else if (screen === 'announcements') renderAdminAnnouncements();
+                else if (screen === 'manageExams') renderAdminExams();
+                else if (screen === 'manageLeaves') renderLeaveManagement();
+                else if (screen === 'manageTeachers') renderTeacherManagement();
+                else if (screen === 'manageClasses') renderClassManagement();
+                else if (screen === 'manageSchedule') renderScheduleManagement();
+                else if (screen === 'reports') renderReports();
+            } else if (role === 'student') {
+                if (screen === 'dashboard') renderStudentDashboard();
+                else if (screen === 'mySchedule') renderStudentSchedule(Object.values(mockData.students).flat().find(s => s.id === appState.currentUser.studentId).classId);
+                else if (screen === 'reportCard') renderStudentReportCard();
+                else if (screen === 'attendance') renderStudentAttendanceHistory();
+                else if (screen === 'announcements') renderStudentAnnouncements();
+                else if (screen === 'profile') renderUserProfile();
+            }
+        }
+        // --- RENDER FUNCTIONS (HTML TEMPLATES) ---
+        function renderAdminExams() {
+            mainContent.innerHTML = `
+                <div class="flex justify-between items-center mb-8">
+                    <h1 class="text-3xl font-bold">Manage Exams</h1>
+                    <button onclick="handleExamForm()" class="bg-teal-600 text-white px-4 py-2 rounded-lg font-semibold hover:bg-teal-700">New Exam</button>
+                </div>
+                <div class="bg-white rounded-xl shadow-md">
+                    <div class="p-6 space-y-4">
+                        ${mockData.exams.map(exam => `
+                            <div class="p-4 border rounded-lg flex justify-between items-start">
+                                <div>
+                                    <h3 class="font-bold text-xl">${exam.name}</h3>
+                                    <p class="text-sm text-slate-500">Date: ${exam.date} | Max Marks: ${exam.maxMarks}</p>
+                                </div>
+                                <div class="flex gap-2">
+                                    <button onclick="handleExamForm(${exam.id})" class="text-blue-600 font-semibold">Edit</button>
+                                    <button onclick="handleDeleteExam(${exam.id})" class="text-red-600 font-semibold">Delete</button>
+                                </div>
+                            </div>
+                        `).join('')}
+                    </div>
+                </div>
+            `;
+        }
+        window.renderAdminExams = renderAdminExams;
+
+        function handleExamForm(id = null) {
+            const isEditing = id !== null;
+            const exam = isEditing ? mockData.exams.find(e => e.id === id) : null;
+            const formHTML = `
+                <form id="examForm">
+                    <div class="mb-4">
+                        <label for="examName" class="block text-sm font-medium text-slate-600 mb-1">Exam Name</label>
+                        <input type="text" id="examName" class="w-full px-4 py-2 border border-slate-300 rounded-lg" value="${isEditing ? exam.name : ''}" required>
+                    </div>
+                    <div class="mb-4">
+                        <label for="examDate" class="block text-sm font-medium text-slate-600 mb-1">Date</label>
+                        <input type="date" id="examDate" class="w-full px-4 py-2 border border-slate-300 rounded-lg" value="${isEditing ? exam.date : ''}" required>
+                    </div>
+                    <div class="mb-4">
+                        <label for="maxMarks" class="block text-sm font-medium text-slate-600 mb-1">Max Marks</label>
+                        <input type="number" id="maxMarks" class="w-full px-4 py-2 border border-slate-300 rounded-lg" value="${isEditing ? exam.maxMarks : ''}" required>
+                    </div>
+                </form>
+            `;
+            showModal(isEditing ? 'Edit Exam' : 'Create Exam', formHTML, [
+                {label: 'Cancel', handler: 'hideModal()', classes: 'bg-slate-200 text-slate-800 px-4 py-2 rounded-lg'},
+                {label: isEditing ? 'Save Changes' : 'Create', handler: `handleExamSubmit(${id})`, classes: 'bg-teal-600 text-white px-4 py-2 rounded-lg'}
+            ]);
+        }
+        window.handleExamForm = handleExamForm;
+
+        function handleExamSubmit(id = null) {
+            const name = document.getElementById('examName').value;
+            const date = document.getElementById('examDate').value;
+            const maxMarks = parseInt(document.getElementById('maxMarks').value);
+
+            if (!name || !date || !maxMarks) {
+                alert('Please fill out all fields.');
+                return;
+            }
+
+            if (id !== null) {
+                const index = mockData.exams.findIndex(e => e.id === id);
+                if (index !== -1) {
+                    mockData.exams[index] = { ...mockData.exams[index], name, date, maxMarks };
+                }
+            } else {
+                const newExam = { id: Date.now(), name, date, maxMarks };
+                mockData.exams.push(newExam);
+            }
+            hideModal();
+            renderAdminExams();
+        }
+        window.handleExamSubmit = handleExamSubmit;
+
+        function handleDeleteExam(id) {
+            const exam = mockData.exams.find(e => e.id === id);
+            showModal('Confirm Deletion', `<p>Are you sure you want to delete the exam "<strong>${exam.name}</strong>"? This will also delete all associated marks.</p>`, [
+                {label: 'Cancel', handler: 'hideModal()', classes: 'bg-slate-200 text-slate-800 px-4 py-2 rounded-lg'},
+                {label: 'Delete', handler: `confirmDeleteExam(${id})`, classes: 'bg-red-500 text-white px-4 py-2 rounded-lg'}
+            ]);
+        }
+        window.handleDeleteExam = handleDeleteExam;
+
+        function confirmDeleteExam(id) {
+            mockData.exams = mockData.exams.filter(e => e.id !== id);
+            mockData.marks = mockData.marks.filter(m => m.examId !== id);
+            hideModal();
+            renderAdminExams();
+        }
+        window.confirmDeleteExam = confirmDeleteExam;
+
+        function renderClassMarksReport(classId) {
+            const cls = mockData.classes.find(c => c.id === classId);
+            const students = mockData.students[classId];
+
+            mainContent.innerHTML = `
+                <button onclick="renderReports()" class="text-teal-600 mb-4 font-semibold">&larr; Back to Report Selection</button>
+                <h1 class="text-3xl font-bold mb-8">Assessment Summary: ${cls.name}</h1>
+                <div class="bg-white rounded-xl shadow-md">
+                    <div class="p-6 space-y-3">
+                        ${students.map(student => `
+                            <button onclick="renderStudentFullReport(${student.id})" class="w-full text-left flex items-center justify-between border-b py-3 last:border-0 hover:bg-stone-50 rounded-lg px-2 -mx-2">
+                                <p class="font-medium">${student.name}</p>
+                                <span class="text-teal-600 font-bold text-xl">→</span>
+                            </button>
+                        `).join('')}
+                    </div>
+                </div>
+            `;
+        }
+        window.renderClassMarksReport = renderClassMarksReport;
+
+        function calculateStudentMarksSummary(studentId) {
+            const studentMarks = mockData.marks.filter(m => m.studentId === studentId);
+            const summary = {
+                totalMarks: 0,
+                maxTotalMarks: 0,
+                percentage: 0,
+                subjects: []
+            };
+
+            mockData.exams.forEach(exam => {
+                const examMarks = studentMarks.filter(m => m.examId === exam.id);
+                examMarks.forEach(mark => {
+                    summary.totalMarks += mark.marksObtained;
+                    summary.maxTotalMarks += exam.maxMarks;
+                });
+            });
+            
+            if (summary.maxTotalMarks > 0) {
+                summary.percentage = ((summary.totalMarks / summary.maxTotalMarks) * 100).toFixed(2);
+            }
+            
+            return summary;
+        }
+
+        function renderStudentFullReport(studentId) {
+            const student = Object.values(mockData.students).flat().find(s => s.id === studentId);
+            const studentClass = mockData.classes.find(c => c.id === student.classId);
+            const marksSummary = calculateStudentMarksSummary(studentId);
+            const attendanceSummary = calculateOverallAttendance(studentId);
+
+            mainContent.innerHTML = `
+                <button onclick="renderClassMarksReport('${student.classId}')" class="text-teal-600 mb-4 font-semibold">&larr; Back to ${studentClass.name}</button>
+                <div class="bg-white p-8 rounded-2xl shadow-lg max-w-4xl mx-auto">
+                    <!-- Student Header -->
+                    <div class="flex items-center gap-6 pb-6 border-b">
+                        <img src="${student.profilePicUrl}" alt="Profile Picture" class="w-24 h-24 rounded-full border-4 border-teal-200">
+                        <div>
+                            <h1 class="text-3xl font-bold">${student.name}</h1>
+                            <p class="text-slate-500">Student ID: ${student.studentId} | Class: ${studentClass.name}</p>
+                        </div>
+                    </div>
+
+                    <!-- Summaries -->
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mt-6">
+                        <div class="bg-stone-50 p-4 rounded-xl">
+                            <h3 class="font-bold text-lg mb-2">Overall Attendance</h3>
+                            <p class="text-4xl font-bold text-green-600">${attendanceSummary}</p>
+                            <p class="text-sm text-slate-500">Based on all recorded periods.</p>
+                        </div>
+                        <div class="bg-stone-50 p-4 rounded-xl">
+                            <h3 class="font-bold text-lg mb-2">Overall Assessment Score</h3>
+                            <p class="text-4xl font-bold text-teal-600">${marksSummary.percentage}%</p>
+                            <p class="text-sm text-slate-500">${marksSummary.totalMarks} / ${marksSummary.maxTotalMarks} total marks</p>
+                        </div>
+                    </div>
+
+                    <!-- Detailed Marks -->
+                    <div class="mt-8">
+                        <h3 class="font-bold text-lg mb-4">Subject-wise Marks</h3>
+                        <div class="space-y-4">
+                        ${mockData.exams.map(exam => {
+                             const examMarks = mockData.marks.filter(m => m.studentId === student.id && m.examId === exam.id);
+                             return `
+                                <div class="border rounded-lg">
+                                    <p class="p-3 bg-stone-100 font-semibold border-b">${exam.name}</p>
+                                    <div class="p-3 grid grid-cols-3 gap-2">
+                                        ${examMarks.map(mark => {
+                                            const subject = mockData.subjects.find(s => s.id === mark.subjectId);
+                                            return `<div class="text-center p-2 bg-stone-50 rounded">
+                                                <p class="font-semibold">${subject.name}</p>
+                                                <p class="text-lg">${mark.marksObtained} / ${exam.maxMarks}</p>
+                                            </div>`
+                                        }).join('')}
+                                    </div>
+                                </div>
+                             `;
+                        }).join('')}
+                        </div>
+                    </div>
+                </div>
+            `;
+        }
+        window.renderStudentFullReport = renderStudentFullReport;
+        function renderAdminExams() {
+            mainContent.innerHTML = `
+                <div class="flex justify-between items-center mb-8">
+                    <h1 class="text-3xl font-bold">Manage Exams</h1>
+                    <button onclick="handleExamForm()" class="bg-teal-600 text-white px-4 py-2 rounded-lg font-semibold hover:bg-teal-700">New Exam</button>
+                </div>
+                <div class="bg-white rounded-xl shadow-md">
+                    <div class="p-6 space-y-4">
+                        ${mockData.exams.map(exam => `
+                            <div class="p-4 border rounded-lg flex justify-between items-start">
+                                <div>
+                                    <h3 class="font-bold text-xl">${exam.name}</h3>
+                                    <p class="text-sm text-slate-500">Date: ${exam.date} | Max Marks: ${exam.maxMarks}</p>
+                                </div>
+                                <div class="flex gap-2">
+                                    <button onclick="handleExamForm(${exam.id})" class="text-blue-600 font-semibold">Edit</button>
+                                    <button onclick="handleDeleteExam(${exam.id})" class="text-red-600 font-semibold">Delete</button>
+                                </div>
+                            </div>
+                        `).join('')}
+                    </div>
+                </div>
+            `;
+        }
+        window.renderAdminExams = renderAdminExams;
+
+        function handleExamForm(id = null) {
+            const isEditing = id !== null;
+            const exam = isEditing ? mockData.exams.find(e => e.id === id) : null;
+            const formHTML = `
+                <form id="examForm">
+                    <div class="mb-4">
+                        <label for="examName" class="block text-sm font-medium text-slate-600 mb-1">Exam Name</label>
+                        <input type="text" id="examName" class="w-full px-4 py-2 border border-slate-300 rounded-lg" value="${isEditing ? exam.name : ''}" required>
+                    </div>
+                    <div class="mb-4">
+                        <label for="examDate" class="block text-sm font-medium text-slate-600 mb-1">Date</label>
+                        <input type="date" id="examDate" class="w-full px-4 py-2 border border-slate-300 rounded-lg" value="${isEditing ? exam.date : ''}" required>
+                    </div>
+                    <div class="mb-4">
+                        <label for="maxMarks" class="block text-sm font-medium text-slate-600 mb-1">Max Marks</label>
+                        <input type="number" id="maxMarks" class="w-full px-4 py-2 border border-slate-300 rounded-lg" value="${isEditing ? exam.maxMarks : ''}" required>
+                    </div>
+                </form>
+            `;
+            showModal(isEditing ? 'Edit Exam' : 'Create Exam', formHTML, [
+                {label: 'Cancel', handler: 'hideModal()', classes: 'bg-slate-200 text-slate-800 px-4 py-2 rounded-lg'},
+                {label: isEditing ? 'Save Changes' : 'Create', handler: `handleExamSubmit(${id})`, classes: 'bg-teal-600 text-white px-4 py-2 rounded-lg'}
+            ]);
+        }
+        window.handleExamForm = handleExamForm;
+
+        function handleExamSubmit(id = null) {
+            const name = document.getElementById('examName').value;
+            const date = document.getElementById('examDate').value;
+            const maxMarks = parseInt(document.getElementById('maxMarks').value);
+
+            if (!name || !date || !maxMarks) {
+                alert('Please fill out all fields.');
+                return;
+            }
+
+            if (id !== null) {
+                const index = mockData.exams.findIndex(e => e.id === id);
+                if (index !== -1) {
+                    mockData.exams[index] = { ...mockData.exams[index], name, date, maxMarks };
+                }
+            } else {
+                const newExam = { id: Date.now(), name, date, maxMarks };
+                mockData.exams.push(newExam);
+            }
+            hideModal();
+            renderAdminExams();
+        }
+        window.handleExamSubmit = handleExamSubmit;
+
+        function handleDeleteExam(id) {
+            const exam = mockData.exams.find(e => e.id === id);
+            showModal('Confirm Deletion', `<p>Are you sure you want to delete the exam "<strong>${exam.name}</strong>"? This will also delete all associated marks.</p>`, [
+                {label: 'Cancel', handler: 'hideModal()', classes: 'bg-slate-200 text-slate-800 px-4 py-2 rounded-lg'},
+                {label: 'Delete', handler: `confirmDeleteExam(${id})`, classes: 'bg-red-500 text-white px-4 py-2 rounded-lg'}
+            ]);
+        }
+        window.handleDeleteExam = handleDeleteExam;
+
+        function confirmDeleteExam(id) {
+            mockData.exams = mockData.exams.filter(e => e.id !== id);
+            mockData.marks = mockData.marks.filter(m => m.examId !== id);
+            hideModal();
+            renderAdminExams();
+        }
+        window.confirmDeleteExam = confirmDeleteExam;
+
+        function renderEnterMarksSelector() {
+            const myClasses = [...new Set(mockData.schedule.filter(s => s.teacherId === appState.currentUser.id).map(s => s.classId))].map(id => mockData.classes.find(c => c.id === id));
+            
+            mainContent.innerHTML = `
+                <h1 class="text-3xl font-bold mb-8">Enter Student Marks</h1>
+                <div class="bg-white p-6 rounded-xl shadow-md">
+                    <div id="marks-step-1">
+                        <h3 class="font-semibold text-lg mb-2">Step 1: Select a Class</h3>
+                        <div class="space-y-2">${myClasses.map(c => `<button onclick="renderSubjectSelector('${c.id}')" class="w-full text-left p-3 bg-stone-50 hover:bg-stone-100 rounded-lg">${c.name}</button>`).join('')}</div>
+                    </div>
+                    <div id="marks-step-2" class="mt-4 hidden"></div>
+                    <div id="marks-step-3" class="mt-4 hidden"></div>
+                </div>
+            `;
+        }
+
+        function renderSubjectSelector(classId) {
+            const mySubjects = [...new Set(mockData.schedule.filter(s => s.teacherId === appState.currentUser.id && s.classId === classId).map(s => s.subjectId))].map(id => mockData.subjects.find(s => s.id === id));
+            document.getElementById('marks-step-2').innerHTML = `
+                <h3 class="font-semibold text-lg mb-2">Step 2: Select a Subject</h3>
+                <div class="space-y-2">${mySubjects.map(s => `<button onclick="renderExamSelector('${classId}', '${s.id}')" class="w-full text-left p-3 bg-stone-50 hover:bg-stone-100 rounded-lg">${s.name}</button>`).join('')}</div>
+            `;
+            document.getElementById('marks-step-2').classList.remove('hidden');
+            document.getElementById('marks-step-3').classList.add('hidden');
+        }
+        window.renderSubjectSelector = renderSubjectSelector;
+
+        function renderExamSelector(classId, subjectId) {
+            document.getElementById('marks-step-3').innerHTML = `
+                <h3 class="font-semibold text-lg mb-2">Step 3: Select an Exam</h3>
+                <div class="space-y-2">${mockData.exams.map(e => `<button onclick="renderMarksEntrySheet('${classId}', '${subjectId}', ${e.id})" class="w-full text-left p-3 bg-stone-50 hover:bg-stone-100 rounded-lg">${e.name}</button>`).join('')}</div>
+            `;
+            document.getElementById('marks-step-3').classList.remove('hidden');
+        }
+        window.renderExamSelector = renderExamSelector;
+
+        function renderMarksEntrySheet(classId, subjectId, examId) {
+            const students = mockData.students[classId];
+            const exam = mockData.exams.find(e => e.id === examId);
+            
+            let formHTML = students.map(student => {
+                const existingMark = mockData.marks.find(m => m.studentId === student.id && m.examId === examId && m.subjectId === subjectId);
+                return `
+                <div class="flex items-center justify-between border-b py-2">
+                    <label for="student_mark_${student.id}" class="font-medium">${student.name}</label>
+                    <input type="number" id="student_mark_${student.id}" class="w-24 p-2 border rounded-lg text-center" min="0" max="${exam.maxMarks}" value="${existingMark ? existingMark.marksObtained : ''}">
+                </div>
+                `;
+            }).join('');
+
+            mainContent.innerHTML = `
+                <button onclick="renderEnterMarksSelector()" class="text-teal-600 mb-4 font-semibold">&larr; Back to Selections</button>
+                <h1 class="text-3xl font-bold mb-2">Enter Marks for ${mockData.subjects.find(s=>s.id === subjectId).name}</h1>
+                <p class="text-slate-500 mb-8">${mockData.classes.find(c=>c.id === classId).name} - ${exam.name}</p>
+                <div class="bg-white p-6 rounded-xl shadow-md">
+                    <form id="marksForm">
+                        <div class="space-y-2">${formHTML}</div>
+                        <button type="submit" class="mt-8 w-full bg-teal-600 text-white py-2 rounded-lg hover:bg-teal-700 transition font-semibold">Save Marks</button>
+                    </form>
+                </div>
+            `;
+            document.getElementById('marksForm').addEventListener('submit', (e) => handleMarksSubmit(e, classId, subjectId, examId));
+        }
+        window.renderMarksEntrySheet = renderMarksEntrySheet;
+
+        function handleMarksSubmit(event, classId, subjectId, examId) {
+            event.preventDefault();
+            const form = event.target;
+            const students = mockData.students[classId];
+            
+            students.forEach(student => {
+                const marksObtained = form.elements[`student_mark_${student.id}`].value;
+                if (marksObtained !== '') {
+                    const existingMarkIndex = mockData.marks.findIndex(m => m.studentId === student.id && m.examId === examId && m.subjectId === subjectId);
+                    if (existingMarkIndex !== -1) {
+                        mockData.marks[existingMarkIndex].marksObtained = parseInt(marksObtained);
+                    } else {
+                        mockData.marks.push({
+                            id: Date.now() + student.id,
+                            studentId: student.id,
+                            classId,
+                            subjectId,
+                            examId,
+                            marksObtained: parseInt(marksObtained)
+                        });
+                    }
+                }
+            });
+            showModal('Success', '<p>Marks have been saved successfully.</p>', [{label: 'OK', handler: 'hideModal()', classes: 'bg-teal-600 text-white px-4 py-2 rounded-lg'}]);
+            navigateToScreen('dashboard');
+        }
+        window.handleMarksSubmit = handleMarksSubmit;
+
+        function renderStudentReportCard() {
+            const studentId = appState.currentUser.studentId;
+            const studentMarks = mockData.marks.filter(m => m.studentId === studentId);
+
+            mainContent.innerHTML = `
+                <h1 class="text-3xl font-bold mb-8">My Report Card</h1>
+                <div class="space-y-8">
+                ${mockData.exams.map(exam => {
+                    const examMarks = studentMarks.filter(m => m.examId === exam.id);
+                    let totalMarks = 0;
+                    let maxTotalMarks = 0;
+
+                    const marksRows = examMarks.map(mark => {
+                        const subject = mockData.subjects.find(s => s.id === mark.subjectId);
+                        totalMarks += mark.marksObtained;
+                        maxTotalMarks += exam.maxMarks;
+                        return `
+                            <tr class="border-b">
+                                <td class="p-3">${subject.name}</td>
+                                <td class="p-3 text-center">${exam.maxMarks}</td>
+                                <td class="p-3 text-center">${mark.marksObtained}</td>
+                            </tr>
+                        `;
+                    }).join('');
+
+                    const percentage = maxTotalMarks > 0 ? ((totalMarks / maxTotalMarks) * 100).toFixed(2) : 0;
+                    
+                    return `
+                    <div class="bg-white rounded-xl shadow-md">
+                        <div class="p-4 border-b">
+                            <h2 class="text-xl font-bold">${exam.name}</h2>
+                            <p class="text-sm text-slate-500">${exam.date}</p>
+                        </div>
+                        <div class="overflow-x-auto">
+                            <table class="w-full text-left">
+                                <thead class="bg-stone-50">
+                                    <tr>
+                                        <th class="p-3 font-semibold">Subject</th>
+                                        <th class="p-3 font-semibold text-center">Max Marks</th>
+                                        <th class="p-3 font-semibold text-center">Marks Obtained</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    ${marksRows}
+                                </tbody>
+                                <tfoot class="font-bold bg-stone-100">
+                                    <tr>
+                                        <td class="p-3">Total</td>
+                                        <td class="p-3 text-center">${maxTotalMarks}</td>
+                                        <td class="p-3 text-center">${totalMarks}</td>
+                                    </tr>
+                                    <tr>
+                                        <td class="p-3" colspan="2">Percentage</td>
+                                        <td class="p-3 text-center text-teal-600">${percentage}%</td>
+                                    </tr>
+                                </tfoot>
+                            </table>
+                        </div>
+                    </div>
+                    `
+                }).join('')}
+                </div>
+            `;
+        }
+        function renderTeacherDashboard() {
+            const today = new Date().toISOString().split('T')[0];
+            const mySchedule = mockData.schedule.filter(s => s.teacherId === appState.currentUser.id);
+            mySchedule.sort((a,b) => a.period - b.period);
+            const teacherAtt = mockData.teacherAttendance.find(a => a.teacherId === appState.currentUser.id && a.date === today);
+
+            let attendanceHTML = `
+                <div class="flex items-center gap-2">
+                    <button onclick="handleTeacherSelfAttendance('Present')" class="bg-green-500 text-white px-4 py-2 rounded-lg font-semibold hover:bg-green-600">Mark Present</button>
+                    <button onclick="handleTeacherSelfAttendance('On Leave')" class="bg-amber-500 text-white px-4 py-2 rounded-lg font-semibold hover:bg-amber-600">Mark On Leave</button>
+                </div>
+            `;
+            if (teacherAtt) {
+                attendanceHTML = `<div class="p-2 rounded-lg font-semibold ${teacherAtt.status === 'Present' ? 'bg-green-100 text-green-800' : 'bg-amber-100 text-amber-800'}">You are marked ${teacherAtt.status} for today.</div>`;
+            }
+
+            mainContent.innerHTML = `
+                <div class="flex flex-wrap justify-between items-center gap-4 mb-8">
+                    <div>
+                        <h1 class="text-3xl font-bold">Welcome, ${appState.currentUser.name}!</h1>
+                        <p class="text-slate-500">Here is your schedule for today.</p>
+                    </div>
+                    ${attendanceHTML}
+                </div>
+                <div class="bg-white rounded-xl shadow-md overflow-hidden">
+                    <div class="p-6 space-y-4">
+                        ${mySchedule.length > 0 ? mySchedule.map(assignment => {
+                            const cls = mockData.classes.find(c => c.id === assignment.classId);
+                            const subject = mockData.subjects.find(s => s.id === assignment.subjectId);
+                            return `
+                            <div class="p-4 border rounded-lg flex items-center justify-between">
+                                <div class="font-semibold text-slate-600">Period ${assignment.period}</div>
+                                <div>
+                                    <p class="font-bold text-lg">${subject.name}</p>
+                                    <p class="text-sm text-slate-600">${cls.name}</p>
+                                </div>
+                                <button onclick="renderAttendanceScreen('${cls.id}', ${assignment.period}, 'dashboard')" class="bg-teal-100 text-teal-800 px-4 py-2 rounded-lg hover:bg-teal-200 transition font-semibold">Mark Attendance</button>
+                            </div>`;
+                        }).join('') : '<p class="text-slate-500 text-center py-8">You have no classes assigned today.</p>'}
+                    </div>
+                </div>
+            `;
+        }
+        function renderMySchedule() {
+            const mySchedule = mockData.schedule.filter(s => s.teacherId === appState.currentUser.id);
+            mySchedule.sort((a,b) => a.period - b.period);
+            const periods = 6;
+
+            mainContent.innerHTML = `
+                <h1 class="text-3xl font-bold mb-8">My Daily Schedule</h1>
+                <div class="bg-white rounded-xl shadow-md overflow-hidden">
+                    <div class="p-6 space-y-4">
+                        ${Array.from({ length: periods }, (_, i) => i + 1).map(period => {
+                            const assignment = mySchedule.find(s => s.period === period);
+                            if (assignment) {
+                                const cls = mockData.classes.find(c => c.id === assignment.classId);
+                                const subject = mockData.subjects.find(s => s.id === assignment.subjectId);
+                                return `
+                                <div class="p-4 border rounded-lg flex items-center justify-between bg-teal-50 border-teal-200">
+                                    <div class="font-semibold text-slate-600">Period ${period}</div>
+                                    <div>
+                                        <p class="font-bold text-right">${subject.name}</p>
+                                        <p class="text-sm text-slate-600 text-right">${cls.name}</p>
+                                    </div>
+                                </div>`;
+                            } else {
+                                return `
+                                <div class="p-4 border rounded-lg flex items-center justify-between bg-stone-50 border-dashed">
+                                    <div class="font-semibold text-slate-400">Period ${period}</div>
+                                    <p class="text-sm text-slate-400">Free Period</p>
+                                </div>`;
+                            }
+                        }).join('')}
+                    </div>
+                </div>
+            `;
+        }
+        
+        function handleTeacherSelfAttendance(status) {
+            const today = new Date().toISOString().split('T')[0];
+            mockData.teacherAttendance = mockData.teacherAttendance.filter(a => !(a.teacherId === appState.currentUser.id && a.date === today));
+            mockData.teacherAttendance.push({
+                teacherId: appState.currentUser.id,
+                date: today,
+                status: status
+            });
+            renderTeacherDashboard();
+        }
+        window.handleTeacherSelfAttendance = handleTeacherSelfAttendance;
+        
+        function renderTeacherAttendanceHistory(month = new Date().getMonth(), year = new Date().getFullYear()) {
+            const monthNames = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
+            const daysInMonth = new Date(year, month + 1, 0).getDate();
+            const firstDayOfMonth = new Date(year, month, 1).getDay();
+            
+            let calendarHTML = `<div class="grid grid-cols-7 gap-1 text-center font-semibold text-slate-600">
+                <div>Sun</div><div>Mon</div><div>Tue</div><div>Wed</div><div>Thu</div><div>Fri</div><div>Sat</div>
+            </div><div class="grid grid-cols-7 gap-1 mt-2">`;
+
+            for (let i = 0; i < firstDayOfMonth; i++) {
+                calendarHTML += `<div></div>`;
+            }
+
+            for (let day = 1; day <= daysInMonth; day++) {
+                const date = `${year}-${String(month + 1).padStart(2,'0')}-${String(day).padStart(2,'0')}`;
+                const hasRecord = mockData.attendance.some(a => a.date === date && mockData.schedule.some(s => s.classId === a.classId && s.teacherId === appState.currentUser.id));
+                
+                calendarHTML += `<button onclick="showTeacherAttendanceForDay('${date}')" class="h-12 w-12 flex items-center justify-center rounded-full ${hasRecord ? 'bg-teal-200 text-teal-800 font-bold' : 'bg-stone-100'} hover:bg-teal-300 transition">${day}</button>`;
+            }
+
+            calendarHTML += `</div>`;
+
+            mainContent.innerHTML = `
+                <h1 class="text-3xl font-bold mb-8">My Attendance History</h1>
+                <div class="bg-white p-6 rounded-xl shadow-md">
+                    <div class="flex justify-between items-center mb-4">
+                        <h2 class="text-xl font-bold">${monthNames[month]} ${year}</h2>
+                        <div>
+                            <button onclick="changeTeacherCalendarMonth(-1)" class="p-2 rounded-full hover:bg-stone-100">&lt;</button>
+                            <button onclick="changeTeacherCalendarMonth(1)" class="p-2 rounded-full hover:bg-stone-100">&gt;</button>
+                        </div>
+                    </div>
+                    ${calendarHTML}
+                </div>
+            `;
+        }
+
+        let currentTeacherCalendarDate = new Date();
+        function changeTeacherCalendarMonth(offset) {
+            currentTeacherCalendarDate.setMonth(currentTeacherCalendarDate.getMonth() + offset);
+            renderTeacherAttendanceHistory(currentTeacherCalendarDate.getMonth(), currentTeacherCalendarDate.getFullYear());
+        }
+        window.changeTeacherCalendarMonth = changeTeacherCalendarMonth;
+
+        function showTeacherAttendanceForDay(date) {
+            const records = mockData.attendance.filter(a => a.date === date && mockData.schedule.some(s => s.classId === a.classId && s.teacherId === appState.currentUser.id));
+            let content = '<p class="text-center">No attendance was marked on this day.</p>';
+            if (records.length > 0) {
+                const recordsByClassPeriod = {};
+                records.forEach(rec => {
+                    const key = `${rec.classId}-${rec.period}`;
+                    if (!recordsByClassPeriod[key]) {
+                        recordsByClassPeriod[key] = { present: 0, absent: 0, late: 0 };
+                    }
+                    if (rec.status === 'Present') recordsByClassPeriod[key].present++;
+                    else if (rec.status === 'Absent') recordsByClassPeriod[key].absent++;
+                    else if (rec.status === 'Late') recordsByClassPeriod[key].late++;
+                });
+                
+                content = '<div class="space-y-4">';
+                for (const key in recordsByClassPeriod) {
+                    const [classId, period] = key.split('-');
+                    const cls = mockData.classes.find(c => c.id === classId);
+                    const summary = recordsByClassPeriod[key];
+                    content += `
+                        <div class="p-3 bg-stone-50 rounded-lg">
+                            <p class="font-bold">${cls.name} - Period ${period}</p>
+                            <p class="text-sm text-slate-600">Present: ${summary.present}, Absent: ${summary.absent}, Late: ${summary.late}</p>
+                        </div>
+                    `;
+                }
+                content += '</div>';
+            }
+            showModal(`Attendance for ${date}`, content, [{label: 'Close', handler: 'hideModal()', classes: 'bg-slate-200 text-slate-800 px-4 py-2 rounded-lg'}]);
+        }
+        window.showTeacherAttendanceForDay = showTeacherAttendanceForDay;
+
+        function handleAttendanceSubmit(event, classId, period) {
+            event.preventDefault();
+            const form = event.target;
+            const students = mockData.students[classId];
+            const today = new Date().toISOString().split('T')[0];
+
+            mockData.attendance = mockData.attendance.filter(record => !(record.date === today && record.classId === classId && record.period === period));
+
+            students.forEach(student => {
+                const status = form.elements[`student_${student.id}`].value;
+                mockData.attendance.push({
+                    date: today,
+                    classId: classId,
+                    period: period,
+                    studentId: student.id,
+                    status: status
+                });
+            });
+
+            showModal('Success', '<p>Attendance has been saved successfully.</p>', [{label: 'OK', handler: 'hideModal()', classes: 'bg-teal-600 text-white px-4 py-2 rounded-lg'}]);
+            navigateToScreen('dashboard');
+        }
+
+        function renderAttendanceScreen(classId, period, fromScreen = 'dashboard') {
+            const students = mockData.students[classId];
+            const className = mockData.classes.find(c => c.id === classId).name;
+            const today = new Date().toISOString().split('T')[0];
+
+            mainContent.innerHTML = `
+                <button onclick="navigateToScreen('${fromScreen}')" class="text-teal-600 mb-4 font-semibold">&larr; Back to Dashboard</button>
+                <h1 class="text-3xl font-bold mb-2">Attendance for ${className}</h1>
+                <p class="text-slate-500 mb-8">Date: ${today} | Period: ${period}</p>
+                <div class="bg-white p-6 rounded-xl shadow-md">
+                    <form id="attendanceForm">
+                        <div class="space-y-4">
+                        ${students.map(s => `
+                            <div class="flex items-center justify-between border-b pb-2">
+                                <p class="font-medium">${s.name}</p>
+                                <div class="flex space-x-4">
+                                    <label class="flex items-center space-x-2"><input type="radio" name="student_${s.id}" value="Present" class="form-radio text-teal-600" checked><span>Present</span></label>
+                                    <label class="flex items-center space-x-2"><input type="radio" name="student_${s.id}" value="Absent" class="form-radio text-red-600"><span>Absent</span></label>
+                                    <label class="flex items-center space-x-2"><input type="radio" name="student_${s.id}" value="Late" class="form-radio text-amber-600"><span>Late</span></label>
+                                </div>
+                            </div>
+                        `).join('')}
+                        </div>
+                        <button type="submit" class="mt-8 w-full bg-teal-600 text-white py-2 rounded-lg hover:bg-teal-700 transition font-semibold">Submit Attendance</button>
+                    </form>
+                </div>
+            `;
+            document.getElementById('attendanceForm').addEventListener('submit', (e) => handleAttendanceSubmit(e, classId, period));
+        }
+        
+        async function handleSuggestReason() {
+            const btn = document.getElementById('suggestReasonBtn');
+            const reasonTextarea = document.getElementById('reason');
+            const leaveType = document.getElementById('leaveType').value;
+            const startDate = document.getElementById('startDate').value;
+            const endDate = document.getElementById('endDate').value;
+
+            if (!startDate || !endDate) {
+                alert('Please select start and end dates first.');
+                return;
+            }
+
+            const start = new Date(startDate);
+            const end = new Date(endDate);
+            const duration = Math.ceil((end - start) / (1000 * 60 * 60 * 24)) + 1;
+            const durationText = `${duration} day${duration > 1 ? 's' : ''}`;
+
+            btn.disabled = true;
+            btn.innerHTML = `<div class="spinner"></div> Generating...`;
+
+            const prompt = `Generate a brief, professional, and polite reason for a teacher's leave application. Type of leave: ${leaveType}. Duration: ${durationText}.`;
+            const suggestedReason = await callGeminiAPI(prompt);
+            
+            reasonTextarea.value = suggestedReason;
+            btn.disabled = false;
+            btn.innerHTML = '✨ Suggest Reason';
+        }
+
+        function handleLeaveSubmit(event) {
+            event.preventDefault();
+            const newLeave = {
+                id: Date.now(),
+                teacherId: appState.currentUser.id,
+                teacherName: appState.currentUser.name,
+                startDate: document.getElementById('startDate').value,
+                endDate: document.getElementById('endDate').value,
+                reason: document.getElementById('reason').value,
+                status: 'Pending'
+            };
+            mockData.leaves.push(newLeave);
+            showModal('Submitted', '<p>Leave application submitted for approval.</p>', [{label: 'OK', handler: 'hideModal()', classes: 'bg-teal-600 text-white px-4 py-2 rounded-lg'}]);
+            navigateToScreen('dashboard');
+        }
+
+        function renderLeaveApplication() {
+            mainContent.innerHTML = `
+                <h1 class="text-3xl font-bold mb-8">Apply for Leave</h1>
+                <div class="bg-white p-8 rounded-xl shadow-md max-w-lg mx-auto">
+                    <form id="leaveForm">
+                        <div class="mb-4">
+                            <label for="leaveType" class="block text-sm font-medium text-slate-600 mb-1">Leave Type</label>
+                            <select id="leaveType" class="w-full px-4 py-2 border border-slate-300 rounded-lg">
+                                <option>Sick Leave</option>
+                                <option>Casual Leave</option>
+                                <option>Personal Leave</option>
+                            </select>
+                        </div>
+                        <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+                            <div>
+                                <label for="startDate" class="block text-sm font-medium text-slate-600 mb-1">Start Date</label>
+                                <input type="date" id="startDate" class="w-full px-4 py-2 border border-slate-300 rounded-lg" required>
+                            </div>
+                            <div>
+                                <label for="endDate" class="block text-sm font-medium text-slate-600 mb-1">End Date</label>
+                                <input type="date" id="endDate" class="w-full px-4 py-2 border border-slate-300 rounded-lg" required>
+                            </div>
+                        </div>
+                        <div class="mb-2">
+                            <div class="flex justify-between items-center mb-1">
+                                <label for="reason" class="block text-sm font-medium text-slate-600">Reason</label>
+                                <button type="button" id="suggestReasonBtn" onclick="handleSuggestReason()" class="text-sm text-teal-600 font-semibold hover:text-teal-800 flex items-center gap-1">✨ Suggest Reason</button>
+                            </div>
+                            <textarea id="reason" rows="4" class="w-full px-4 py-2 border border-slate-300 rounded-lg" placeholder="Please provide a brief reason for your leave..." required></textarea>
+                        </div>
+                        <button type="submit" class="w-full mt-4 bg-teal-600 text-white py-2 rounded-lg hover:bg-teal-700 transition font-semibold">Submit Application</button>
+                    </form>
+                </div>
+            `;
+            document.getElementById('leaveForm').addEventListener('submit', handleLeaveSubmit);
+        }
+
+        function handleChangePassword() {
+            const formHTML = `
+                <form id="changePasswordForm">
+                    <div id="passwordChangeError" class="text-red-500 text-sm mb-4 hidden"></div>
+                    <div class="mb-4">
+                        <label for="currentPassword" class="block text-sm font-medium text-slate-600 mb-1">Current Password</label>
+                        <input type="password" id="currentPassword" class="w-full px-4 py-2 border border-slate-300 rounded-lg" required>
+                    </div>
+                    <div class="mb-4">
+                        <label for="newPassword" class="block text-sm font-medium text-slate-600 mb-1">New Password</label>
+                        <input type="password" id="newPassword" class="w-full px-4 py-2 border border-slate-300 rounded-lg" required>
+                    </div>
+                    <div class="mb-4">
+                        <label for="confirmPassword" class="block text-sm font-medium text-slate-600 mb-1">Confirm New Password</label>
+                        <input type="password" id="confirmPassword" class="w-full px-4 py-2 border border-slate-300 rounded-lg" required>
+                    </div>
+                </form>
+            `;
+             showModal('Change Password', formHTML, [
+                {label: 'Cancel', handler: 'hideModal()', classes: 'bg-slate-200 text-slate-800 px-4 py-2 rounded-lg'},
+                {label: 'Update Password', handler: 'handleChangePasswordSubmit()', classes: 'bg-teal-600 text-white px-4 py-2 rounded-lg'}
+            ]);
+        }
+        window.handleChangePassword = handleChangePassword;
+
+        function handleChangePasswordSubmit() {
+            const currentPassword = document.getElementById('currentPassword').value;
+            const newPassword = document.getElementById('newPassword').value;
+            const confirmPassword = document.getElementById('confirmPassword').value;
+            const errorDiv = document.getElementById('passwordChangeError');
+
+            const user = mockData.users.find(u => u.id === appState.currentUser.id);
+
+            errorDiv.classList.add('hidden');
+
+            if (user.password !== currentPassword) {
+                errorDiv.textContent = 'Current password is incorrect.';
+                errorDiv.classList.remove('hidden');
+                return;
+            }
+            if (newPassword !== confirmPassword) {
+                errorDiv.textContent = 'New passwords do not match.';
+                errorDiv.classList.remove('hidden');
+                return;
+            }
+            if (newPassword === currentPassword) {
+                errorDiv.textContent = 'New password cannot be the same as the old one.';
+                errorDiv.classList.remove('hidden');
+                return;
+            }
+            if (newPassword.length < 8) {
+                errorDiv.textContent = 'Password must be at least 8 characters long.';
+                errorDiv.classList.remove('hidden');
+                return;
+            }
+
+            user.password = newPassword;
+            user.passwordChanged = true;
+            hideModal();
+            showModal('Success', '<p>Your password has been changed successfully.</p>', [{label: 'OK', handler: 'hideModal()', classes: 'bg-teal-600 text-white px-4 py-2 rounded-lg'}]);
+        }
+        window.handleChangePasswordSubmit = handleChangePasswordSubmit;
+
+        function renderUserProfile() {
+            const user = mockData.users.find(u => u.id === appState.currentUser.id);
+            mainContent.innerHTML = `
+                <h1 class="text-3xl font-bold mb-8">Your Profile</h1>
+                <div class="bg-white p-8 rounded-xl shadow-md max-w-lg mx-auto">
+                    ${user.profilePicUrl ? `
+                    <div class="text-center mb-6">
+                        <img src="${user.profilePicUrl}" alt="Profile Picture" class="w-32 h-32 rounded-full mx-auto mb-4 border-4 border-teal-200">
+                    </div>
+                    ` : ''}
+                    <div class="space-y-4">
+                        <div><label class="text-sm font-medium text-slate-500">Name</label><p class="text-lg font-semibold">${appState.currentUser.name}</p></div>
+                        <div><label class="text-sm font-medium text-slate-500">${appState.currentUser.role === 'student' ? 'Student ID' : (appState.currentUser.role === 'teacher' ? 'Teacher ID' : 'Email')}</label><p class="text-lg font-semibold">${appState.currentUser.role === 'teacher' ? user.teacherId : appState.currentUser.email}</p></div>
+                        <div><label class="text-sm font-medium text-slate-500">Role</label><p class="text-lg font-semibold capitalize">${appState.currentUser.role}</p></div>
+                        ${user.qualifications ? `<div><label class="text-sm font-medium text-slate-500">Qualifications</label><p class="text-lg font-semibold">${user.qualifications}</p></div>` : ''}
+                    </div>
+                    <div class="mt-8 pt-6 border-t space-y-3">
+                         ${appState.currentUser.role === 'teacher' ? `<button onclick="handleChangePassword()" class="w-full bg-teal-100 text-teal-800 py-2 rounded-lg hover:bg-teal-200 transition font-semibold">Change Password</button>` : ''}
+                         <button onclick="handleLogout()" class="w-full bg-slate-200 text-slate-800 py-2 rounded-lg hover:bg-slate-300 transition font-semibold">Logout</button>
+                    </div>
+                </div>
+            `;
+        }
+
+        function renderAdminDashboard() {
+            const pendingLeaves = mockData.leaves.filter(l => l.status === 'Pending').length;
+            const totalTeachers = mockData.users.filter(u => u.role === 'teacher').length;
+            mainContent.innerHTML = `
+                <h1 class="text-3xl font-bold mb-2">Admin Dashboard</h1>
+                <p class="text-slate-500 mb-8">A quick overview of school operations.</p>
+                <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
+                    <div class="bg-white p-6 rounded-xl shadow-md"><h3 class="text-slate-500 font-semibold">Total Teachers</h3><p class="text-4xl font-bold mt-2">${totalTeachers}</p></div>
+                    <div class="bg-white p-6 rounded-xl shadow-md"><h3 class="text-slate-500 font-semibold">Pending Leave Requests</h3><p class="text-4xl font-bold mt-2 text-amber-600">${pendingLeaves}</p></div>
+                    <div class="bg-white p-6 rounded-xl shadow-md"><h3 class="text-slate-500 font-semibold">Today's Attendance</h3><p class="text-4xl font-bold mt-2 text-teal-600">95%</p></div>
+                </div>
+            `;
+        }
+        
+        async function handleLeaveAction(leaveId, action) {
+            const leave = mockData.leaves.find(l => l.id === leaveId);
+            const actionText = action === 'approve' ? 'approved' : 'rejected';
+            
+            const btnContainer = document.getElementById(`actionBtn_${leaveId}`);
+            const originalButtons = btnContainer.innerHTML;
+            btnContainer.innerHTML = `<div class="spinner mx-auto"></div>`;
+
+            const prompt = `Draft a polite and professional email to a teacher named ${leave.teacherName} informing them that their leave request from ${leave.startDate} to ${leave.endDate} for "${leave.reason}" has been ${actionText}. Keep it brief and to the point.`;
+            const emailBody = await callGeminiAPI(prompt);
+
+            btnContainer.innerHTML = originalButtons;
+
+            showModal(
+                `Confirm ${action}`,
+                `<p class="mb-4">You are about to ${action} this leave request. The following email will be sent:</p>
+                 <div class="bg-stone-100 p-3 rounded-md border text-sm"><p>${emailBody.replace(/\n/g, '<br>')}</p></div>`,
+                [
+                    {label: 'Cancel', handler: 'hideModal()', classes: 'bg-slate-200 text-slate-800 px-4 py-2 rounded-lg'},
+                    {label: `Send & ${action.charAt(0).toUpperCase() + action.slice(1)}`, handler: `confirmLeaveAction(${leaveId}, '${action}')`, classes: 'bg-teal-600 text-white px-4 py-2 rounded-lg'}
+                ]
+            );
+        }
+        window.handleLeaveAction = handleLeaveAction;
+
+        function confirmLeaveAction(leaveId, action) {
+            const leave = mockData.leaves.find(l => l.id === leaveId);
+            leave.status = action === 'approve' ? 'Approved' : 'Rejected';
+            hideModal();
+            renderLeaveManagement();
+        }
+        window.confirmLeaveAction = confirmLeaveAction;
+
+        function renderLeaveManagement() {
+            mainContent.innerHTML = `
+                <h1 class="text-3xl font-bold mb-8">Manage Leave Requests</h1>
+                <div class="bg-white rounded-xl shadow-md overflow-hidden">
+                    <div class="p-6 space-y-4">
+                        ${mockData.leaves.length > 0 ? mockData.leaves.map(leave => `
+                            <div class="p-4 border rounded-lg flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 ${leave.status === 'Pending' ? 'border-amber-300 bg-amber-50' : (leave.status === 'Approved' ? 'border-green-300 bg-green-50' : 'border-red-300 bg-red-50')}">
+                                <div>
+                                    <p class="font-bold">${leave.teacherName}</p>
+                                    <p class="text-sm text-slate-600">${leave.startDate} to ${leave.endDate}</p>
+                                    <p class="text-sm text-slate-500 mt-1">Reason: ${leave.reason}</p>
+                                </div>
+                                <div id="actionBtn_${leave.id}" class="flex items-center gap-2">
+                                    ${leave.status === 'Pending' ? `
+                                        <button onclick="handleLeaveAction(${leave.id}, 'approve')" class="bg-green-500 text-white px-3 py-1 rounded-md text-sm font-semibold hover:bg-green-600 w-24 h-8 flex items-center justify-center">Approve</button>
+                                        <button onclick="handleLeaveAction(${leave.id}, 'reject')" class="bg-red-500 text-white px-3 py-1 rounded-md text-sm font-semibold hover:bg-red-600 w-24 h-8 flex items-center justify-center">Reject</button>
+                                    ` : `<span class="px-3 py-1 rounded-full text-sm font-semibold ${leave.status === 'Approved' ? 'bg-green-200 text-green-800' : 'bg-red-200 text-red-800'}">${leave.status}</span>`}
+                                </div>
+                            </div>
+                        `).join('') : '<p class="text-slate-500 text-center py-8">No leave requests found.</p>'}
+                    </div>
+                </div>
+            `;
+        }
+
+        function handleAddTeacher() {
+            const formHTML = `
+                <form id="addTeacherForm">
+                    <div class="mb-4">
+                        <label for="newTeacherName" class="block text-sm font-medium text-slate-600 mb-1">Full Name</label>
+                        <input type="text" id="newTeacherName" class="w-full px-4 py-2 border border-slate-300 rounded-lg" required>
+                    </div>
+                    <div class="mb-4">
+                        <label for="newTeacherEmail" class="block text-sm font-medium text-slate-600 mb-1">Email</label>
+                        <input type="email" id="newTeacherEmail" class="w-full px-4 py-2 border border-slate-300 rounded-lg" required>
+                    </div>
+                    <div class="mb-4">
+                        <label for="newTeacherPassword" class="block text-sm font-medium text-slate-600 mb-1">Temporary Password</label>
+                        <input type="password" id="newTeacherPassword" class="w-full px-4 py-2 border border-slate-300 rounded-lg" required>
+                    </div>
+                     <div class="mb-4">
+                        <label for="newTeacherQuals" class="block text-sm font-medium text-slate-600 mb-1">Qualifications</label>
+                        <input type="text" id="newTeacherQuals" class="w-full px-4 py-2 border border-slate-300 rounded-lg" placeholder="e.g., M.Sc. in Physics" required>
+                    </div>
+                </form>
+            `;
+            showModal('Add New Teacher', formHTML, [
+                {label: 'Cancel', handler: 'hideModal()', classes: 'bg-slate-200 text-slate-800 px-4 py-2 rounded-lg'},
+                {label: 'Add Teacher', handler: 'handleNewTeacherSubmit()', classes: 'bg-teal-600 text-white px-4 py-2 rounded-lg'}
+            ]);
+        }
+        window.handleAddTeacher = handleAddTeacher;
+
+        function handleNewTeacherSubmit() {
+            const name = document.getElementById('newTeacherName').value;
+            const email = document.getElementById('newTeacherEmail').value;
+            const password = document.getElementById('newTeacherPassword').value;
+            const qualifications = document.getElementById('newTeacherQuals').value;
+
+            if (name && email && password && qualifications) {
+                const newTeacher = {
+                    id: Date.now(),
+                    name,
+                    email,
+                    password,
+                    role: 'teacher',
+                    status: 'active',
+                    passwordChanged: false,
+                    teacherId: 'TCH' + Date.now(),
+                    qualifications,
+                    profilePicUrl: `https://placehold.co/128x128/e9d5ff/4c1d95?text=${name.charAt(0)}`
+                };
+                mockData.users.push(newTeacher);
+                hideModal();
+                renderTeacherManagement();
+            } else {
+                alert('Please fill out all fields.');
+            }
+        }
+        window.handleNewTeacherSubmit = handleNewTeacherSubmit;
+        
+        function handleToggleTeacherStatus(teacherId) {
+            const teacher = mockData.users.find(u => u.id === teacherId);
+            if (!teacher) return;
+            
+            const action = teacher.status === 'active' ? 'Deactivate' : 'Activate';
+            
+            showModal(`Confirm ${action}`, `<p>Are you sure you want to ${action.toLowerCase()} ${teacher.name}?</p>`, [
+                {label: 'Cancel', handler: 'hideModal()', classes: 'bg-slate-200 text-slate-800 px-4 py-2 rounded-lg'},
+                {label: action, handler: `confirmToggleTeacherStatus(${teacherId})`, classes: `${action === 'Deactivate' ? 'bg-red-500' : 'bg-green-500'} text-white px-4 py-2 rounded-lg`}
+            ]);
+        }
+        window.handleToggleTeacherStatus = handleToggleTeacherStatus;
+
+        function confirmToggleTeacherStatus(teacherId) {
+            const teacher = mockData.users.find(u => u.id === teacherId);
+            if (teacher) {
+                teacher.status = teacher.status === 'active' ? 'inactive' : 'active';
+            }
+            hideModal();
+            renderTeacherManagement();
+        }
+        window.confirmToggleTeacherStatus = confirmToggleTeacherStatus;
+
+
+        function renderTeacherManagement(searchTerm = '') {
+            const isPrincipal = appState.currentUser.email === 'admin@school.com';
+            mainContent.innerHTML = `
+                <div class="flex flex-wrap justify-between items-center gap-4 mb-8">
+                    <h1 class="text-3xl font-bold">Manage Teachers</h1>
+                    <div class="relative">
+                        <input type="text" id="teacherSearch" placeholder="Search teachers..." class="w-full sm:w-64 pl-10 pr-4 py-2 border border-slate-300 rounded-lg" value="${searchTerm}">
+                        <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                            <span class="text-slate-400">🔍</span>
+                        </div>
+                    </div>
+                    ${isPrincipal ? `<button onclick="handleAddTeacher()" class="bg-teal-600 text-white px-4 py-2 rounded-lg font-semibold hover:bg-teal-700">Add Teacher</button>` : ''}
+                </div>
+                <div id="teacherListContainer" class="bg-white rounded-xl shadow-md overflow-x-auto">
+                    ${renderTeacherTable(searchTerm)}
+                </div>
+            `;
+            document.getElementById('teacherSearch').addEventListener('input', (e) => {
+                document.getElementById('teacherListContainer').innerHTML = renderTeacherTable(e.target.value);
+            });
+        }
+        
+        function renderTeacherTable(searchTerm = '') {
+            const teachers = mockData.users.filter(u => u.role === 'teacher' && u.name.toLowerCase().includes(searchTerm.toLowerCase()));
+            return `
+                <table class="w-full text-left">
+                    <thead class="bg-slate-50 border-b">
+                        <tr>
+                            <th class="p-4 font-semibold">Name</th>
+                            <th class="p-4 font-semibold">Email</th>
+                            <th class="p-4 font-semibold">Status</th>
+                            <th class="p-4 font-semibold">Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                    ${teachers.map(t => `
+                        <tr class="border-b last:border-b-0 ${t.status === 'inactive' ? 'bg-stone-100 text-slate-400' : ''}">
+                            <td class="p-4"><button onclick="renderTeacherDetail(${t.id}, 'manageTeachers')" class="font-medium text-teal-600 hover:underline">${t.name}</button></td>
+                            <td class="p-4">${t.email}</td>
+                            <td class="p-4">
+                                <span class="px-2 py-1 text-xs font-semibold rounded-full ${t.status === 'active' ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'}">
+                                    ${t.status.charAt(0).toUpperCase() + t.status.slice(1)}
+                                </span>
+                            </td>
+                            <td class="p-4 space-x-2">
+                                <button onclick="handleToggleTeacherStatus(${t.id})" class="${t.status === 'active' ? 'text-red-600' : 'text-green-600'} font-semibold">
+                                    ${t.status === 'active' ? 'Deactivate' : 'Activate'}
+                                </button>
+                            </td>
+                        </tr>
+                    `).join('')}
+                    </tbody>
+                </table>
+            `;
+        }
+
+        function renderClassManagement(searchTerm = '') {
+            mainContent.innerHTML = `
+                <div class="flex flex-wrap justify-between items-center gap-4 mb-8">
+                    <h1 class="text-3xl font-bold">Manage Classes</h1>
+                     <div class="relative">
+                        <input type="text" id="classSearch" placeholder="Search classes..." class="w-full sm:w-64 pl-10 pr-4 py-2 border border-slate-300 rounded-lg" value="${searchTerm}">
+                        <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                            <span class="text-slate-400">🔍</span>
+                        </div>
+                    </div>
+                    <button onclick="handleAddClass()" class="bg-teal-600 text-white px-4 py-2 rounded-lg font-semibold hover:bg-teal-700">Add New Class</button>
+                </div>
+                <div id="classListContainer" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                    ${renderClassCards(searchTerm)}
+                </div>
+            `;
+            document.getElementById('classSearch').addEventListener('input', (e) => {
+                document.getElementById('classListContainer').innerHTML = renderClassCards(e.target.value);
+            });
+        }
+        window.renderClassManagement = renderClassManagement;
+
+        function renderClassCards(searchTerm = '') {
+            const classes = mockData.classes.filter(c => c.name.toLowerCase().includes(searchTerm.toLowerCase()));
+            return classes.map(c => {
+                const classTeacher = mockData.users.find(u => u.id === c.teacherId);
+                return `
+                <div class="bg-white p-6 rounded-xl shadow-md hover:shadow-lg transition cursor-pointer" onclick="renderClassDetails('${c.id}')">
+                    <h3 class="font-bold text-xl mb-2">${c.name}</h3>
+                    <p class="text-slate-500">Class Teacher: ${classTeacher ? classTeacher.name : 'Unassigned'}</p>
+                    <p class="text-slate-500">Students: ${mockData.students[c.id] ? mockData.students[c.id].length : 0}</p>
+                </div>
+            `}).join('');
+        }
+
+        function handleAddClass() {
+             const assignedTeacherIds = mockData.classes.map(c => c.teacherId).filter(id => id !== null);
+             const availableTeachers = mockData.users.filter(u => u.role === 'teacher' && u.status === 'active' && !assignedTeacherIds.includes(u.id));
+             
+             const formHTML = `
+                <form id="addClassForm">
+                    <div class="mb-4">
+                        <label for="newClassName" class="block text-sm font-medium text-slate-600 mb-1">Class Name</label>
+                        <input type="text" id="newClassName" class="w-full px-4 py-2 border border-slate-300 rounded-lg" placeholder="e.g., Grade 8 - Section A" required>
+                    </div>
+                    <div class="mb-4">
+                        <label for="assignTeacher" class="block text-sm font-medium text-slate-600 mb-1">Assign Class Teacher</label>
+                        <select id="assignTeacher" class="w-full px-4 py-2 border border-slate-300 rounded-lg" required>
+                            <option value="">Select an available teacher</option>
+                            ${availableTeachers.map(t => `<option value="${t.id}">${t.name}</option>`).join('')}
+                        </select>
+                    </div>
+                </form>
+            `;
+            showModal('Add New Class', formHTML, [
+                {label: 'Cancel', handler: 'hideModal()', classes: 'bg-slate-200 text-slate-800 px-4 py-2 rounded-lg'},
+                {label: 'Create Class', handler: 'handleNewClassSubmit()', classes: 'bg-teal-600 text-white px-4 py-2 rounded-lg'}
+            ]);
+        }
+        window.handleAddClass = handleAddClass;
+
+
+        function handleNewClassSubmit() {
+            const name = document.getElementById('newClassName').value;
+            const teacherId = parseInt(document.getElementById('assignTeacher').value);
+            if (name && teacherId) {
+                const newClass = {
+                    id: 'C' + Date.now(),
+                    name,
+                    teacherId
+                };
+                mockData.classes.push(newClass);
+                mockData.students[newClass.id] = []; // Initialize empty student list
+                hideModal();
+                renderClassManagement();
+            } else {
+                alert('Please fill out all fields.');
+            }
+        }
+        window.handleNewClassSubmit = handleNewClassSubmit;
+
+        function renderClassDetails(classId, searchTerm = '') {
+            const cls = mockData.classes.find(c => c.id === classId);
+            mainContent.innerHTML = `
+                <button onclick="renderClassManagement()" class="text-teal-600 mb-4 font-semibold">&larr; Back to All Classes</button>
+                <div class="flex flex-wrap justify-between items-center gap-4 mb-8">
+                    <h1 class="text-3xl font-bold">Students in ${cls.name}</h1>
+                    <div class="relative">
+                        <input type="text" id="studentSearch" placeholder="Search students..." class="w-full sm:w-64 pl-10 pr-4 py-2 border border-slate-300 rounded-lg" value="${searchTerm}">
+                        <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                            <span class="text-slate-400">🔍</span>
+                        </div>
+                    </div>
+                    <div class="flex gap-2">
+                        <button onclick="handleAssignClassTeacher('${classId}')" class="bg-blue-600 text-white px-4 py-2 rounded-lg font-semibold hover:bg-blue-700">Assign Class Teacher</button>
+                        <button onclick="handleAddStudent('${classId}')" class="bg-teal-600 text-white px-4 py-2 rounded-lg font-semibold hover:bg-teal-700">Add Student</button>
+                    </div>
+                </div>
+                <div class="bg-white rounded-xl shadow-md">
+                    <div id="studentListContainer" class="p-6">
+                        ${renderStudentList(classId, searchTerm)}
+                    </div>
+                </div>
+            `;
+            document.getElementById('studentSearch').addEventListener('input', (e) => {
+                document.getElementById('studentListContainer').innerHTML = renderStudentList(classId, e.target.value);
+            });
+        }
+        window.renderClassDetails = renderClassDetails;
+         function handleAssignClassTeacher(classId) {
+            const cls = mockData.classes.find(c => c.id === classId);
+            const assignedTeacherIds = mockData.classes.map(c => c.teacherId).filter(id => id !== null && id !== cls.teacherId);
+            const availableTeachers = mockData.users.filter(u => u.role === 'teacher' && u.status === 'active' && !assignedTeacherIds.includes(u.id));
+            
+            const formHTML = `
+                <form id="assignClassTeacherForm">
+                    <div class="mb-4">
+                        <label for="classTeacherSelect" class="block text-sm font-medium text-slate-600 mb-1">Select an Available Teacher</label>
+                        <select id="classTeacherSelect" class="w-full px-4 py-2 border border-slate-300 rounded-lg" required>
+                            <option value="">-- Unassigned --</option>
+                            ${availableTeachers.map(t => `<option value="${t.id}" ${cls.teacherId === t.id ? 'selected' : ''}>${t.name}</option>`).join('')}
+                        </select>
+                    </div>
+                </form>
+            `;
+            showModal(`Assign Class Teacher for ${cls.name}`, formHTML, [
+                {label: 'Cancel', handler: 'hideModal()', classes: 'bg-slate-200 text-slate-800 px-4 py-2 rounded-lg'},
+                {label: 'Save Assignment', handler: `handleAssignClassTeacherSubmit('${classId}')`, classes: 'bg-teal-600 text-white px-4 py-2 rounded-lg'}
+            ]);
+        }
+        window.handleAssignClassTeacher = handleAssignClassTeacher;
+
+        function handleAssignClassTeacherSubmit(classId) {
+            const teacherId = parseInt(document.getElementById('classTeacherSelect').value) || null;
+            const cls = mockData.classes.find(c => c.id === classId);
+            if (cls) {
+                cls.teacherId = teacherId;
+            }
+            hideModal();
+            renderClassManagement(); // Go back to the main class list to see the updated card
+        }
+        window.handleAssignClassTeacherSubmit = handleAssignClassTeacherSubmit;
+        
+        function renderStudentList(classId, searchTerm = '') {
+            const students = (mockData.students[classId] || []).filter(s => s.name.toLowerCase().includes(searchTerm.toLowerCase()));
+            return students.length > 0 ? students.map(s => `
+                <button onclick="renderStudentDetail(${s.id})" class="w-full text-left flex items-center justify-between border-b py-3 last:border-0 hover:bg-stone-50 rounded-lg px-2 -mx-2">
+                    <p class="font-medium">${s.name}</p>
+                    <span class="text-teal-600 font-bold text-xl">→</span>
+                </button>
+            `).join('') : '<p class="text-slate-500 text-center py-8">No students found.</p>';
+        }
+
+        function handleAddStudent(classId) {
+            const formHTML = `
+                <form id="addStudentForm">
+                    <div class="mb-4">
+                        <label for="newStudentName" class="block text-sm font-medium text-slate-600 mb-1">Student Full Name</label>
+                        <input type="text" id="newStudentName" class="w-full px-4 py-2 border border-slate-300 rounded-lg" required>
+                    </div>
+                </form>
+            `;
+            showModal('Add New Student', formHTML, [
+                {label: 'Cancel', handler: 'hideModal()', classes: 'bg-slate-200 text-slate-800 px-4 py-2 rounded-lg'},
+                {label: 'Add Student', handler: `handleNewStudentSubmit('${classId}')`, classes: 'bg-teal-600 text-white px-4 py-2 rounded-lg'}
+            ]);
+        }
+        window.handleAddStudent = handleAddStudent;
+
+        function handleNewStudentSubmit(classId) {
+            const name = document.getElementById('newStudentName').value;
+            if (name) {
+                 const year = 2015 - parseInt(classId.substring(1));
+                 const dob = `${year}-${String(Math.floor(Math.random()*12)+1).padStart(2,'0')}-${String(Math.floor(Math.random()*28)+1).padStart(2,'0')}`;
+                const newStudent = {
+                    id: Date.now(),
+                    studentId: String(Math.floor(1000000000 + Math.random() * 9000000000)),
+                    name,
+                    dob,
+                    classId,
+                    profilePicUrl: `https://placehold.co/128x128/0d9488/ffffff?text=${name.charAt(0)}`
+                };
+                if (!mockData.students[classId]) {
+                    mockData.students[classId] = [];
+                }
+                mockData.students[classId].push(newStudent);
+                hideModal();
+                renderClassDetails(classId);
+            } else {
+                alert('Please enter a student name.');
+            }
+        }
+        window.handleNewStudentSubmit = handleNewStudentSubmit;
+        
+        function calculateOverallAttendance(studentId) {
+            const records = mockData.attendance.filter(a => a.studentId === studentId);
+            if (records.length === 0) return 'N/A';
+            const presentCount = records.filter(r => r.status === 'Present').length;
+            return `${((presentCount / records.length) * 100).toFixed(0)}%`;
+        }
+        function renderTeacherDetail(teacherId, fromScreen) {
+            const teacher = mockData.users.find(u => u.id === teacherId);
+            if (!teacher) {
+                mainContent.innerHTML = `<p>Teacher not found.</p>`;
+                return;
+            }
+            const isAdmin = appState.currentUser.role === 'admin';
+
+            mainContent.innerHTML = `
+                <button onclick="navigateToScreen('${fromScreen}')" class="text-teal-600 mb-4 font-semibold">&larr; Back</button>
+                 <div class="bg-white p-8 rounded-2xl shadow-lg max-w-2xl mx-auto">
+                    <div class="text-center">
+                        <img src="${teacher.profilePicUrl}" alt="Profile Picture" class="w-32 h-32 rounded-full mx-auto mb-4 border-4 border-teal-200">
+                        <h1 class="text-3xl font-bold">${teacher.name}</h1>
+                        <p class="text-slate-500">Teacher ID: ${teacher.teacherId}</p>
+                    </div>
+                    <div class="mt-8 pt-6 border-t text-center">
+                        <p class="text-sm text-slate-500">Qualifications</p>
+                        <p class="font-semibold">${teacher.qualifications}</p>
+                    </div>
+                    ${isAdmin ? `
+                    <div class="mt-6 pt-6 border-t flex gap-4">
+                        <button onclick="handleEditTeacherDetails(${teacher.id})" class="flex-1 bg-stone-100 text-slate-700 py-2 rounded-lg hover:bg-stone-200 transition font-semibold">Edit Details</button>
+                        <button onclick="handleChangeTeacherPicture(${teacher.id})" class="flex-1 bg-stone-100 text-slate-700 py-2 rounded-lg hover:bg-stone-200 transition font-semibold">Change Picture</button>
+                    </div>
+                    ` : ''}
+                </div>
+            `;
+        }
+        window.renderTeacherDetail = renderTeacherDetail;
+        function handleEditTeacherDetails(teacherId) {
+            const teacher = mockData.users.find(u => u.id === teacherId);
+            if (!teacher) return;
+
+            const formHTML = `
+                <form id="editTeacherForm">
+                    <div class="mb-4">
+                        <label for="editTeacherName" class="block text-sm font-medium text-slate-600 mb-1">Full Name</label>
+                        <input type="text" id="editTeacherName" class="w-full px-4 py-2 border border-slate-300 rounded-lg" value="${teacher.name}" required>
+                    </div>
+                    <div class="mb-4">
+                        <label for="editTeacherEmail" class="block text-sm font-medium text-slate-600 mb-1">Email</label>
+                        <input type="email" id="editTeacherEmail" class="w-full px-4 py-2 border border-slate-300 rounded-lg" value="${teacher.email}" required>
+                    </div>
+                    <div class="mb-4">
+                        <label for="editTeacherQuals" class="block text-sm font-medium text-slate-600 mb-1">Qualifications</label>
+                        <input type="text" id="editTeacherQuals" class="w-full px-4 py-2 border border-slate-300 rounded-lg" value="${teacher.qualifications}" required>
+                    </div>
+                </form>
+            `;
+            showModal('Edit Teacher Details', formHTML, [
+                {label: 'Cancel', handler: 'hideModal()', classes: 'bg-slate-200 text-slate-800 px-4 py-2 rounded-lg'},
+                {label: 'Save Changes', handler: `handleEditTeacherSubmit(${teacherId})`, classes: 'bg-teal-600 text-white px-4 py-2 rounded-lg'}
+            ]);
+        }
+        window.handleEditTeacherDetails = handleEditTeacherDetails;
+
+        function handleEditTeacherSubmit(teacherId) {
+            const teacher = mockData.users.find(u => u.id === teacherId);
+            if (!teacher) return;
+
+            teacher.name = document.getElementById('editTeacherName').value;
+            teacher.email = document.getElementById('editTeacherEmail').value;
+            teacher.qualifications = document.getElementById('editTeacherQuals').value;
+
+            hideModal();
+            renderTeacherDetail(teacherId, 'manageTeachers'); // Re-render the detail view to show changes
+        }
+        window.handleEditTeacherSubmit = handleEditTeacherSubmit;
+
+        function handleChangeTeacherPicture(teacherId) {
+            const teacher = mockData.users.find(u => u.id === teacherId);
+            if (!teacher) return;
+
+            // In a real app, this would open a file picker. Here, we simulate by changing the placeholder color.
+            const randomColor = Math.floor(Math.random()*16777215).toString(16);
+            teacher.profilePicUrl = `https://placehold.co/128x128/${randomColor}/ffffff?text=${teacher.name.charAt(0)}`;
+            
+            renderTeacherDetail(teacherId, 'manageTeachers'); // Re-render to show the new picture
+        }
+        window.handleChangeTeacherPicture = handleChangeTeacherPicture;
+
+        function renderStudentDetail(studentId) {
+            const student = Object.values(mockData.students).flat().find(s => s.id === studentId);
+            if (!student) {
+                mainContent.innerHTML = `<p>Student not found.</p>`;
+                return;
+            }
+            const studentClass = mockData.classes.find(c => c.id === student.classId);
+            const overallAttendance = calculateOverallAttendance(studentId);
+
+            mainContent.innerHTML = `
+                <button onclick="renderClassDetails('${student.classId}')" class="text-teal-600 mb-4 font-semibold">&larr; Back to ${studentClass.name}</button>
+                <div class="bg-white p-8 rounded-2xl shadow-lg max-w-2xl mx-auto">
+                    <div class="text-center">
+                        <img src="${student.profilePicUrl}" alt="Profile Picture" class="w-32 h-32 rounded-full mx-auto mb-4 border-4 border-teal-200">
+                        <h1 class="text-3xl font-bold">${student.name}</h1>
+                        <p class="text-slate-500">Student ID: ${student.studentId}</p>
+                        <p class="text-slate-500">${studentClass.name}</p>
+                    </div>
+                    <div class="mt-8 pt-6 border-t grid grid-cols-1 sm:grid-cols-2 gap-4 text-center">
+                        <div>
+                            <p class="text-sm text-slate-500">Date of Birth</p>
+                            <p class="font-semibold">${student.dob}</p>
+                        </div>
+                        <div>
+                            <p class="text-sm text-slate-500">Overall Attendance</p>
+                            <p class="font-semibold text-green-600">${overallAttendance}</p>
+                        </div>
+                    </div>
+                    <div class="mt-6">
+                        <button class="w-full bg-stone-100 text-slate-700 py-2 rounded-lg hover:bg-stone-200 transition font-semibold">Change Profile Picture</button>
+                    </div>
+                </div>
+            `;
+        }
+        window.renderStudentDetail = renderStudentDetail;
+
+        function renderScheduleManagement() {
+             const periods = ['Period 1', 'Period 2', 'Period 3', 'Period 4', 'Period 5', 'Period 6'];
+             mainContent.innerHTML = `
+                <div class="flex justify-between items-center mb-8">
+                    <h1 class="text-3xl font-bold">Master Schedule</h1>
+                </div>
+                <div class="bg-white rounded-xl shadow-md overflow-x-auto">
+                    <table class="w-full text-left">
+                        <thead class="bg-slate-50">
+                            <tr>
+                                <th class="p-4 font-semibold">Class</th>
+                                ${periods.map(p => `<th class="p-4 font-semibold text-center">${p}</th>`).join('')}
+                            </tr>
+                        </thead>
+                        <tbody>
+                            ${mockData.classes.map(cls => `
+                                <tr class="border-b">
+                                    <td class="p-4 font-bold">${cls.name}</td>
+                                    ${periods.map((_, i) => {
+                                        const periodNum = i + 1;
+                                        const assignment = mockData.schedule.find(s => s.classId === cls.id && s.period === periodNum);
+                                        if (assignment) {
+                                            const teacher = mockData.users.find(u => u.id === assignment.teacherId);
+                                            const subject = mockData.subjects.find(s => s.id === assignment.subjectId);
+                                            return `<td class="p-2 text-center border-l">
+                                                <button onclick="handleAssignTeacher('${cls.id}', ${periodNum})" class="w-full h-full text-left p-2 rounded-md ${teacher ? 'bg-teal-50 hover:bg-teal-100' : 'bg-amber-50 hover:bg-amber-100'}">
+                                                    <p class="font-semibold ${teacher ? 'text-teal-800' : 'text-amber-800'} text-sm">${subject.name}</p>
+                                                    <p class="text-xs text-slate-500">${teacher ? teacher.name : 'Unassigned'}</p>
+                                                </button>
+                                            </td>`;
+                                        }
+                                        return `<td class="p-2 text-center border-l"></td>`;
+                                    }).join('')}
+                                </tr>
+                            `).join('')}
+                        </tbody>
+                    </table>
+                </div>
+             `;
+        }
+        window.renderScheduleManagement = renderScheduleManagement;
+        
+        function handleAssignTeacher(classId, period) {
+            const assignment = mockData.schedule.find(s => s.classId === classId && s.period === period);
+            if (!assignment) return;
+
+            const teachers = mockData.users.filter(u => {
+                const scheduleCount = mockData.schedule.filter(s => s.teacherId === u.id).length;
+                const isBusy = mockData.schedule.some(s => s.period === period && s.teacherId === u.id && s.classId !== classId);
+                return u.role === 'teacher' && u.status === 'active' && scheduleCount < 6 && !isBusy;
+            });
+            
+            const cls = mockData.classes.find(c => c.id === classId);
+            const subject = mockData.subjects.find(s => s.id === assignment.subjectId);
+
+            const formHTML = `
+                <div class="mb-4">
+                    <p><span class="font-semibold">Class:</span> ${cls.name}</p>
+                    <p><span class="font-semibold">Period:</span> ${period}</p>
+                    <p><span class="font-semibold">Subject:</span> ${subject.name}</p>
+                </div>
+                <form id="assignTeacherForm">
+                    <label for="assignTeacher" class="block text-sm font-medium text-slate-600 mb-1">Assign Teacher</label>
+                    <select id="assignTeacher" class="w-full px-4 py-2 border border-slate-300 rounded-lg" required>
+                        <option value="">Select a teacher</option>
+                        ${teachers.map(t => `<option value="${t.id}" ${assignment.teacherId === t.id ? 'selected' : ''}>${t.name}</option>`).join('')}
+                    </select>
+                </form>
+            `;
+            showModal('Assign Teacher to Period', formHTML, [
+                {label: 'Cancel', handler: 'hideModal()', classes: 'bg-slate-200 text-slate-800 px-4 py-2 rounded-lg'},
+                {label: 'Update Assignment', handler: `handleAssignTeacherSubmit('${classId}', ${period})`, classes: 'bg-teal-600 text-white px-4 py-2 rounded-lg'}
+            ]);
+        }
+        window.handleAssignTeacher = handleAssignTeacher;
+
+        function handleAssignTeacherSubmit(classId, period) {
+            const teacherId = parseInt(document.getElementById('assignTeacher').value);
+            if (!teacherId) {
+                alert('Please select a teacher.');
+                return;
+            }
+
+            const assignment = mockData.schedule.find(s => s.classId === classId && s.period === period);
+            if (assignment) {
+                assignment.teacherId = teacherId;
+                hideModal();
+                renderScheduleManagement();
+            }
+        }
+        window.handleAssignTeacherSubmit = handleAssignTeacherSubmit;
+        
+        function renderReports() {
+            mainContent.innerHTML = `
+                <h1 class="text-3xl font-bold mb-8">School Reports</h1>
+                
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-8">
+                    <!-- Student Reports Section -->
+                    <div class="bg-white p-6 rounded-xl shadow-md">
+                        <h2 class="text-2xl font-bold mb-4">Student Reports</h2>
+                        <p class="text-slate-600 mb-4">Select a class to view detailed monthly attendance or assessment summaries for students.</p>
+                        <button onclick="renderStudentReportSelector('attendance')" class="w-full mb-2 p-4 bg-teal-50 hover:bg-teal-100 rounded-lg text-teal-800 font-semibold transition">Attendance Reports</button>
+                        <button onclick="renderStudentReportSelector('marks')" class="w-full p-4 bg-indigo-50 hover:bg-indigo-100 rounded-lg text-indigo-800 font-semibold transition">Assessment Reports</button>
+                    </div>
+
+                    <!-- Teacher Reports Section -->
+                    <div class="bg-white p-6 rounded-xl shadow-md">
+                         <h2 class="text-2xl font-bold mb-4">Teacher Reports</h2>
+                        <p class="text-slate-600 mb-4">View the detailed monthly attendance grid for all teachers.</p>
+                        <button onclick="renderTeacherAttendanceReport()" class="w-full p-4 bg-teal-50 hover:bg-teal-100 rounded-lg text-teal-800 font-semibold transition">Teacher Attendance</button>
+                    </div>
+                </div>
+            `;
+        }
+
+        function renderStudentReportSelector(reportType) {
+            const title = reportType === 'attendance' ? 'Attendance Reports' : 'Assessment Summary';
+            const buttonColor = reportType === 'attendance' ? 'bg-teal-50 hover:bg-teal-100 text-teal-800' : 'bg-indigo-50 hover:bg-indigo-100 text-indigo-800';
+            const action = reportType === 'attendance' ? 'renderAttendanceGridReport' : 'renderClassMarksReport';
+
+            mainContent.innerHTML = `
+                <button onclick="renderReports()" class="text-teal-600 mb-4 font-semibold">&larr; Back to Report Types</button>
+                <h1 class="text-3xl font-bold mb-8">${title}</h1>
+                <div class="bg-white p-6 rounded-xl shadow-md">
+                    <p class="text-slate-600">Select a class to view the report.</p>
+                    <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mt-4">
+                        ${mockData.classes.map(c => `
+                            <button onclick="${action}('${c.id}')" class="p-4 ${buttonColor} rounded-lg font-semibold transition">
+                                ${c.name}
+                            </button>
+                        `).join('')}
+                    </div>
+                </div>
+            `;
+        }
+        window.renderStudentReportSelector = renderStudentReportSelector;
+
+        function renderTeacherAttendanceReport(month = new Date().getMonth(), year = new Date().getFullYear()) {
+            const teachers = mockData.users.filter(u => u.role === 'teacher');
+            const daysInMonth = new Date(year, month + 1, 0).getDate();
+            const monthNames = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
+
+            let tableHeader = '';
+            for (let day = 1; day <= daysInMonth; day++) {
+                tableHeader += `<th class="p-2 border text-center text-sm">${String(day).padStart(2, '0')}</th>`;
+            }
+
+            let tableBody = teachers.map(teacher => {
+                let row = `<td class="p-2 border font-semibold sticky left-0 bg-white">${teacher.name}</td>`;
+                for (let day = 1; day <= daysInMonth; day++) {
+                    const date = `${year}-${String(month + 1).padStart(2,'0')}-${String(day).padStart(2,'0')}`;
+                    const record = mockData.teacherAttendance.find(a => a.teacherId === teacher.id && a.date === date);
+                    const status = record ? record.status.charAt(0) : '';
+                    const color = status === 'P' ? 'bg-green-500' : (status === 'O' ? 'bg-red-500' : 'bg-slate-200');
+                    row += `<td class="p-2 border text-center"><span class="w-6 h-6 flex items-center justify-center rounded-full text-white text-xs font-bold ${color}">${status}</span></td>`;
+                }
+                return `<tr>${row}</tr>`;
+            }).join('');
+
+            mainContent.innerHTML = `
+                <button onclick="renderReports()" class="text-teal-600 mb-4 font-semibold">&larr; Back to Report Selection</button>
+                <div class="flex flex-wrap justify-between items-center gap-4 mb-6">
+                    <div>
+                        <h1 class="text-3xl font-bold">Monthly Teacher Attendance</h1>
+                        <div class="flex gap-2 items-center mt-2">
+                           <select id="monthSelector" class="p-2 border rounded-lg">
+                                ${monthNames.map((m, i) => `<option value="${i}" ${i === month ? 'selected' : ''}>${m}</option>`).join('')}
+                           </select>
+                           <select id="yearSelector" class="p-2 border rounded-lg">
+                                <option ${year === 2025 ? 'selected' : ''}>2025</option>
+                                <option ${year === 2024 ? 'selected' : ''}>2024</option>
+                           </select>
+                        </div>
+                    </div>
+                    <button onclick="handleExportTeacherCSV(${month}, ${year})" class="bg-teal-600 text-white px-4 py-2 rounded-lg font-semibold hover:bg-teal-700">Export to CSV</button>
+                </div>
+                <div class="bg-white rounded-xl shadow-md overflow-x-auto">
+                    <table class="w-full border-collapse">
+                        <thead class="sticky top-0 bg-slate-100">
+                            <tr>
+                                <th class="p-2 border font-semibold sticky left-0 bg-slate-100">Teacher</th>
+                                ${tableHeader}
+                            </tr>
+                        </thead>
+                        <tbody>
+                            ${tableBody}
+                        </tbody>
+                    </table>
+                </div>
+            `;
+            document.getElementById('monthSelector').addEventListener('change', (e) => {
+                renderTeacherAttendanceReport(parseInt(e.target.value), parseInt(document.getElementById('yearSelector').value));
+            });
+            document.getElementById('yearSelector').addEventListener('change', (e) => {
+                renderTeacherAttendanceReport(parseInt(document.getElementById('monthSelector').value), parseInt(e.target.value));
+            });
+        }
+        window.renderTeacherAttendanceReport = renderTeacherAttendanceReport;
+
+        function handleExportTeacherCSV(month, year) {
+            const teachers = mockData.users.filter(u => u.role === 'teacher');
+            const daysInMonth = new Date(year, month + 1, 0).getDate();
+            
+            let csvContent = "data:text/csv;charset=utf-8,";
+            const headers = ["Teacher Name", ...Array.from({length: daysInMonth}, (_, i) => `${String(i + 1).padStart(2, '0')}`)];
+            csvContent += headers.join(",") + "\r\n";
+
+            teachers.forEach(teacher => {
+                let row = [teacher.name];
+                for (let day = 1; day <= daysInMonth; day++) {
+                    const date = `${year}-${String(month + 1).padStart(2,'0')}-${String(day).padStart(2,'0')}`;
+                    const record = mockData.teacherAttendance.find(a => a.teacherId === teacher.id && a.date === date);
+                    const status = record ? record.status.charAt(0) : '';
+                    row.push(status);
+                }
+                csvContent += row.join(",") + "\r\n";
+            });
+
+            const encodedUri = encodeURI(csvContent);
+            const link = document.createElement("a");
+            link.setAttribute("href", encodedUri);
+            link.setAttribute("download", `teacher_attendance_${year}_${month+1}.csv`);
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+        }
+        window.handleExportTeacherCSV = handleExportTeacherCSV;
+        
+        function renderAttendanceGridReport(classId, month = new Date().getMonth(), year = new Date().getFullYear()) {
+            const cls = mockData.classes.find(c => c.id === classId);
+            const students = mockData.students[classId];
+            const daysInMonth = new Date(year, month + 1, 0).getDate();
+            
+            const monthNames = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
+
+            let tableHeader = '';
+            for (let day = 1; day <= daysInMonth; day++) {
+                tableHeader += `<th class="p-2 border text-center text-sm">${String(day).padStart(2, '0')}</th>`;
+            }
+
+            let tableBody = students.map(student => {
+                let row = `<td class="p-2 border font-semibold sticky left-0 bg-white">${student.name}</td>`;
+                for (let day = 1; day <= daysInMonth; day++) {
+                    const date = `${year}-${String(month + 1).padStart(2,'0')}-${String(day).padStart(2,'0')}`;
+                    const records = mockData.attendance.filter(a => a.studentId === student.id && a.date === date);
+                    let dailyStatus = '';
+                    if (records.length > 0) {
+                        if (records.some(r => r.status === 'Absent')) dailyStatus = 'A';
+                        else if (records.some(r => r.status === 'Late')) dailyStatus = 'L';
+                        else dailyStatus = 'P';
+                    }
+                    const color = dailyStatus === 'P' ? 'bg-green-500' : (dailyStatus === 'A' ? 'bg-red-500' : (dailyStatus === 'L' ? 'bg-amber-500' : 'bg-slate-200'));
+                    row += `<td class="p-2 border text-center"><span class="w-6 h-6 flex items-center justify-center rounded-full text-white text-xs font-bold ${color}">${dailyStatus}</span></td>`;
+                }
+                return `<tr>${row}</tr>`;
+            }).join('');
+
+            mainContent.innerHTML = `
+                <button onclick="renderReports()" class="text-teal-600 mb-4 font-semibold">&larr; Back to Report Selection</button>
+                <div class="flex flex-wrap justify-between items-center gap-4 mb-6">
+                    <div>
+                        <h1 class="text-3xl font-bold">Monthly Report: ${cls.name}</h1>
+                        <div class="flex gap-2 items-center mt-2">
+                           <select id="monthSelector" class="p-2 border rounded-lg">
+                                ${monthNames.map((m, i) => `<option value="${i}" ${i === month ? 'selected' : ''}>${m}</option>`).join('')}
+                           </select>
+                           <select id="yearSelector" class="p-2 border rounded-lg">
+                                <option ${year === 2025 ? 'selected' : ''}>2025</option>
+                                <option ${year === 2024 ? 'selected' : ''}>2024</option>
+                           </select>
+                        </div>
+                    </div>
+                    <button onclick="handleExportCSV('${classId}', ${month}, ${year})" class="bg-teal-600 text-white px-4 py-2 rounded-lg font-semibold hover:bg-teal-700">Export to CSV</button>
+                </div>
+                <div class="bg-white rounded-xl shadow-md overflow-x-auto">
+                    <table class="w-full border-collapse">
+                        <thead class="sticky top-0 bg-slate-100">
+                            <tr>
+                                <th class="p-2 border font-semibold sticky left-0 bg-slate-100">Student</th>
+                                ${tableHeader}
+                            </tr>
+                        </thead>
+                        <tbody>
+                            ${tableBody}
+                        </tbody>
+                    </table>
+                </div>
+            `;
+
+            document.getElementById('monthSelector').addEventListener('change', (e) => {
+                renderAttendanceGridReport(classId, parseInt(e.target.value), parseInt(document.getElementById('yearSelector').value));
+            });
+            document.getElementById('yearSelector').addEventListener('change', (e) => {
+                renderAttendanceGridReport(classId, parseInt(document.getElementById('monthSelector').value), parseInt(e.target.value));
+            });
+        }
+        window.renderAttendanceGridReport = renderAttendanceGridReport;
+        
+        function handleExportCSV(classId, month, year) {
+            const students = mockData.students[classId];
+            const daysInMonth = new Date(year, month + 1, 0).getDate();
+            
+            let csvContent = "data:text/csv;charset=utf-8,";
+            
+            const headers = ["Student Name", ...Array.from({length: daysInMonth}, (_, i) => `${String(i + 1).padStart(2, '0')}`)];
+            csvContent += headers.join(",") + "\r\n";
+
+            students.forEach(student => {
+                let row = [student.name];
+                for (let day = 1; day <= daysInMonth; day++) {
+                    const date = `${year}-${String(month + 1).padStart(2,'0')}-${String(day).padStart(2,'0')}`;
+                    const records = mockData.attendance.filter(a => a.studentId === student.id && a.date === date);
+                    let dailyStatus = '';
+                    if (records.length > 0) {
+                        if (records.some(r => r.status === 'Absent')) dailyStatus = 'A';
+                        else if (records.some(r => r.status === 'Late')) dailyStatus = 'L';
+                        else dailyStatus = 'P';
+                    }
+                    row.push(dailyStatus);
+                }
+                csvContent += row.join(",") + "\r\n";
+            });
+
+            const encodedUri = encodeURI(csvContent);
+            const link = document.createElement("a");
+            link.setAttribute("href", encodedUri);
+            link.setAttribute("download", `attendance_${classId}_${year}_${month+1}.csv`);
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+        }
+        window.handleExportCSV = handleExportCSV;
+
+        // --- STUDENT RENDER FUNCTIONS ---
+        function renderStudentDashboard() {
+             const student = Object.values(mockData.students).flat().find(s => s.id === appState.currentUser.studentId);
+             const studentClass = mockData.classes.find(c => c.id === student.classId);
+             const today = new Date().toISOString().split('T')[0];
+             const attendanceToday = mockData.attendance.find(a => a.studentId === student.id && a.date === today);
+             
+             let attendanceHTML = `<div class="p-2 rounded-lg font-semibold bg-stone-100 text-slate-500">No attendance marked for today.</div>`;
+             if (attendanceToday) {
+                 const colorClass = attendanceToday.status === 'Present' ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800';
+                 attendanceHTML = `<div class="p-2 rounded-lg font-semibold ${colorClass}">Today's Status: ${attendanceToday.status}</div>`;
+             }
+
+            mainContent.innerHTML = `
+                <h1 class="text-3xl font-bold mb-2">Welcome, ${student.name}!</h1>
+                <p class="text-slate-500 mb-8">Here is your information for today.</p>
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    <div class="bg-white p-6 rounded-xl shadow-md">
+                        <h3 class="text-slate-500 font-semibold mb-2">My Class</h3>
+                        <p class="text-2xl font-bold">${studentClass.name}</p>
+                    </div>
+                     <div class="bg-white p-6 rounded-xl shadow-md">
+                        <h3 class="text-slate-500 font-semibold mb-2">Today's Attendance</h3>
+                        ${attendanceHTML}
+                    </div>
+                </div>
+                <div class="mt-8">
+                    <h2 class="text-2xl font-bold mb-4">Today's Schedule</h2>
+                    ${renderStudentSchedule(student.classId)}
+                </div>
+            `;
+        }
+        
+        function renderStudentSchedule(classId) {
+            const schedule = mockData.schedule.filter(s => s.classId === classId);
+            schedule.sort((a,b) => a.period - b.period);
+             return `
+                <div class="bg-white rounded-xl shadow-md overflow-hidden">
+                    <div class="p-6 space-y-4">
+                        ${schedule.map(assignment => {
+                            const subject = mockData.subjects.find(s => s.id === assignment.subjectId);
+                            const teacher = mockData.users.find(u => u.id === assignment.teacherId);
+                            return `
+                                <div class="p-4 border rounded-lg flex items-center justify-between">
+                                    <div class="font-semibold text-slate-600">Period ${assignment.period}</div>
+                                    <div>
+                                        <p class="font-bold text-lg text-right">${subject.name}</p>
+                                        <button onclick="renderTeacherDetail(${teacher.id}, 'dashboard')" class="text-sm text-slate-500 text-right hover:text-teal-600">Teacher: ${teacher ? teacher.name : 'N/A'}</button>
+                                    </div>
+                                </div>
+                            `;
+                        }).join('')}
+                    </div>
+                </div>
+            `;
+        }
+        window.renderStudentSchedule = renderStudentSchedule;
+
+        function renderStudentAttendanceHistory() {
+            const studentId = appState.currentUser.studentId;
+            const records = mockData.attendance.filter(a => a.studentId === studentId).sort((a, b) => new Date(b.date) - new Date(a.date));
+            
+            mainContent.innerHTML = `
+                <h1 class="text-3xl font-bold mb-8">My Attendance History</h1>
+                 <div class="bg-white rounded-xl shadow-md overflow-hidden">
+                    <div class="p-6 space-y-3">
+                        ${records.length > 0 ? records.map(rec => {
+                            const statusColor = rec.status === 'Present' ? 'text-green-600' : (rec.status === 'Absent' ? 'text-red-600' : 'text-amber-600');
+                            return `
+                            <div class="flex justify-between items-center border-b pb-2">
+                                <p class="font-medium">${rec.date}</p>
+                                <p class="font-bold ${statusColor}">${rec.status}</p>
+                            </div>
+                            `
+                        }).join('') : '<p class="text-slate-500 text-center py-8">No attendance records found.</p>'}
+                    </div>
+                </div>
+            `;
+        }
+        
+        function renderStudentAnnouncements() {
+             mainContent.innerHTML = `
+                <h1 class="text-3xl font-bold mb-8">School Announcements</h1>
+                <div class="space-y-6">
+                    ${mockData.announcements.sort((a,b) => new Date(b.date) - new Date(a.date)).map(ann => `
+                        <div class="bg-white p-6 rounded-xl shadow-md">
+                            <p class="text-sm text-slate-500 mb-1">${ann.date}</p>
+                            <h3 class="font-bold text-xl mb-2">${ann.title}</h3>
+                            <p class="text-slate-600">${ann.content}</p>
+                        </div>
+                    `).join('')}
+                </div>
+            `;
+        }
+        function renderAdminAnnouncements() {
+            mainContent.innerHTML = `
+                <div class="flex justify-between items-center mb-8">
+                    <h1 class="text-3xl font-bold">Manage Announcements</h1>
+                    <button onclick="handleAddAnnouncement()" class="bg-teal-600 text-white px-4 py-2 rounded-lg font-semibold hover:bg-teal-700">New Announcement</button>
+                </div>
+                <div id="announcementsList" class="space-y-4">
+                    ${renderAnnouncementItems()}
+                </div>
+            `;
+        }
+        window.renderAdminAnnouncements = renderAdminAnnouncements;
+
+        function renderAnnouncementItems() {
+            return mockData.announcements.sort((a, b) => new Date(b.date) - new Date(a.date)).map(ann => `
+                <div class="bg-white p-4 rounded-xl shadow-md flex justify-between items-start">
+                    <div>
+                        <p class="text-sm text-slate-500">${ann.date}</p>
+                        <h3 class="font-bold text-xl mt-1">${ann.title}</h3>
+                        <p class="text-slate-600 mt-2">${ann.content}</p>
+                    </div>
+                    <div class="flex gap-2">
+                        <button onclick="handleEditAnnouncement(${ann.id})" class="text-blue-600 font-semibold">Edit</button>
+                        <button onclick="handleDeleteAnnouncement(${ann.id})" class="text-red-600 font-semibold">Delete</button>
+                    </div>
+                </div>
+            `).join('');
+        }
+
+        function handleAddAnnouncement() {
+            handleAnnouncementForm();
+        }
+        window.handleAddAnnouncement = handleAddAnnouncement;
+
+        function handleEditAnnouncement(id) {
+            const announcement = mockData.announcements.find(ann => ann.id === id);
+            if (announcement) {
+                handleAnnouncementForm(announcement);
+            }
+        }
+        window.handleEditAnnouncement = handleEditAnnouncement;
+        
+        function handleAnnouncementForm(announcement = null) {
+            const isEditing = announcement !== null;
+            const formHTML = `
+                <form id="announcementForm">
+                    <input type="hidden" id="announcementId" value="${isEditing ? announcement.id : ''}">
+                    <div class="mb-4">
+                        <label for="announcementTitle" class="block text-sm font-medium text-slate-600 mb-1">Title</label>
+                        <input type="text" id="announcementTitle" class="w-full px-4 py-2 border border-slate-300 rounded-lg" value="${isEditing ? announcement.title : ''}" required>
+                    </div>
+                    <div class="mb-4">
+                        <label for="announcementContent" class="block text-sm font-medium text-slate-600 mb-1">Content</label>
+                        <textarea id="announcementContent" rows="5" class="w-full px-4 py-2 border border-slate-300 rounded-lg" required>${isEditing ? announcement.content : ''}</textarea>
+                    </div>
+                </form>
+            `;
+            showModal(isEditing ? 'Edit Announcement' : 'Create Announcement', formHTML, [
+                {label: 'Cancel', handler: 'hideModal()', classes: 'bg-slate-200 text-slate-800 px-4 py-2 rounded-lg'},
+                {label: isEditing ? 'Save Changes' : 'Publish', handler: `handleAnnouncementSubmit(${isEditing ? announcement.id : 'null'})`, classes: 'bg-teal-600 text-white px-4 py-2 rounded-lg'}
+            ]);
+        }
+
+        function handleAnnouncementSubmit(id = null) {
+            const title = document.getElementById('announcementTitle').value;
+            const content = document.getElementById('announcementContent').value;
+
+            if (!title || !content) {
+                alert('Please fill out all fields.');
+                return;
+            }
+
+            if (id !== null) { // Editing existing
+                const index = mockData.announcements.findIndex(ann => ann.id === id);
+                if (index !== -1) {
+                    mockData.announcements[index].title = title;
+                    mockData.announcements[index].content = content;
+                }
+            } else { // Creating new
+                const newAnnouncement = {
+                    id: Date.now(),
+                    date: new Date().toISOString().split('T')[0],
+                    title,
+                    content
+                };
+                mockData.announcements.push(newAnnouncement);
+            }
+            hideModal();
+            renderAdminAnnouncements();
+        }
+        window.handleAnnouncementSubmit = handleAnnouncementSubmit;
+
+        function handleDeleteAnnouncement(id) {
+            const announcement = mockData.announcements.find(ann => ann.id === id);
+            showModal('Confirm Deletion', `<p>Are you sure you want to delete the announcement titled "<strong>${announcement.title}</strong>"? This action cannot be undone.</p>`, [
+                {label: 'Cancel', handler: 'hideModal()', classes: 'bg-slate-200 text-slate-800 px-4 py-2 rounded-lg'},
+                {label: 'Delete', handler: `confirmDeleteAnnouncement(${id})`, classes: 'bg-red-500 text-white px-4 py-2 rounded-lg'}
+            ]);
+        }
+        window.handleDeleteAnnouncement = handleDeleteAnnouncement;
+
+        function confirmDeleteAnnouncement(id) {
+            mockData.announcements = mockData.announcements.filter(ann => ann.id !== id);
+            hideModal();
+            renderAdminAnnouncements();
+        }
+        window.confirmDeleteAnnouncement = confirmDeleteAnnouncement;
+
+        // --- AUTHENTICATION & INITIALIZATION ---
+        function handleLogin(event) {
+            event.preventDefault();
+            const loginId = document.getElementById('loginId').value;
+            const password = document.getElementById('password').value;
+            const role = document.getElementById('role').value;
+            
+            let user = null;
+            if (role === 'student') {
+                const allStudents = Object.values(mockData.students).flat();
+                const student = allStudents.find(s => s.studentId === loginId && s.dob === password);
+                if (student) {
+                    user = { id: student.id, name: student.name, email: student.studentId, role: 'student', studentId: student.id };
+                }
+            } else {
+                user = mockData.users.find(u => u.email === loginId && u.password === password && u.role === role);
+            }
+
+            if (user) {
+                appState.currentUser = { id: user.id, name: user.name, email: user.email, role: user.role, studentId: user.studentId };
+                appState.currentView = user.role;
+                appState.currentScreen = 'dashboard';
+                initMainApp();
+            } else {
+                loginError.textContent = 'Invalid credentials for the selected role.';
+                loginError.classList.remove('hidden');
+            }
+        }
+
+        function handleLogout() {
+            appState.currentUser = null;
+            appState.currentView = 'login';
+            loginView.style.display = 'flex';
+            mainAppView.style.display = 'none';
+            loginForm.reset();
+            loginError.classList.add('hidden');
+        }
+
+        function initMainApp() {
+            loginView.style.display = 'none';
+            mainAppView.style.display = 'block';
+            
+            const navItems = appState.currentUser.role === 'teacher' ? teacherNavItems : (appState.currentUser.role === 'admin' ? adminNavItems : studentNavItems);
+            
+            desktopNavLinks.innerHTML = navItems.map(item => `<button data-screen="${item.id}" class="w-full text-left p-3 rounded-lg hover:bg-stone-100 transition font-medium text-slate-700 flex items-center gap-3"><span class="text-xl">${item.icon}</span><span>${item.label}</span></button>`).join('');
+            
+            let mobileNavHTML = navItems.map(item => `<button data-screen="${item.id}" class="flex flex-col items-center text-slate-500 p-1 flex-1"><span class="text-2xl">${item.icon}</span><span class="text-xs font-medium">${item.label}</span></button>`).join('');
+            mobileNavHTML += `<button id="logoutBtnMobile" class="flex flex-col items-center text-slate-500 p-1 flex-1"><span class="text-2xl">🚪</span><span class="text-xs font-medium">Logout</span></button>`;
+            mobileNav.innerHTML = mobileNavHTML;
+
+            desktopUser.textContent = `${appState.currentUser.name} (${appState.currentUser.role})`;
+
+            desktopNavLinks.querySelectorAll('button').forEach(btn => btn.addEventListener('click', () => navigateToScreen(btn.dataset.screen)));
+            mobileNav.querySelectorAll('button[data-screen]').forEach(btn => btn.addEventListener('click', () => navigateToScreen(btn.dataset.screen)));
+            
+            logoutBtnDesktop.addEventListener('click', handleLogout);
+            document.getElementById('logoutBtnMobile').addEventListener('click', handleLogout);
+
+            navigateToScreen('dashboard');
+        }
+
+        // --- EVENT LISTENERS ---
+        loginForm.addEventListener('submit', handleLogin);
+        document.getElementById('role').addEventListener('change', (e) => {
+            const role = e.target.value;
+            const loginIdLabel = document.getElementById('loginIdLabel');
+            const loginPasswordLabel = document.getElementById('loginPasswordLabel');
+            const loginIdInput = document.getElementById('loginId');
+            const passwordInput = document.getElementById('password');
+            const loginHint = document.getElementById('loginHint');
+
+            if (role === 'student') {
+                loginIdLabel.textContent = 'Student ID';
+                loginPasswordLabel.textContent = 'Date of Birth';
+                loginIdInput.placeholder = 'Enter your 10-digit ID';
+                passwordInput.placeholder = 'YYYY-MM-DD';
+                const testUser = mockData.users.find(u=>u.role==='student');
+                if(testUser) {
+                    const testStudent = Object.values(mockData.students).flat().find(s => s.id === testUser.studentId);
+                    loginHint.innerHTML = `<p>Test ID: ${testStudent.studentId}</p><p>Password (DOB): ${testStudent.dob}</p>`;
+                }
+            } else {
+                loginIdLabel.textContent = 'Email';
+                loginPasswordLabel.textContent = 'Password';
+                loginIdInput.placeholder = 'user@school.com';
+                passwordInput.placeholder = 'password';
+                loginHint.innerHTML = `<p>Use \`teacher@school.com\` or \`admin@school.com\`</p><p>Password: \`password\`</p>`;
+            }
+        });
+
+    </script>
+</body>
+</html>
