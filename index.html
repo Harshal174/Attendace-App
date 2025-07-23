@@ -441,7 +441,7 @@
             });
         }
 
-        function renderMainContent() {
+         function renderMainContent() {
             if (appState.activeChart) {
                 appState.activeChart.destroy();
                 appState.activeChart = null;
@@ -471,7 +471,7 @@
                 else if (screen === 'reports') renderReports();
             } else if (role === 'student') {
                 if (screen === 'dashboard') renderStudentDashboard();
-                else if (screen === 'mySchedule') renderStudentSchedule(Object.values(mockData.students).flat().find(s => s.id === appState.currentUser.studentId).classId);
+                else if (screen === 'mySchedule') renderStudentSchedulePage();
                 else if (screen === 'reportCard') renderStudentReportCard();
                 else if (screen === 'attendance') renderStudentAttendanceHistory();
                 else if (screen === 'announcements') renderStudentAnnouncements();
@@ -2205,6 +2205,13 @@
                 </div>
             `;
         }
+        function renderStudentSchedulePage() {
+            const student = Object.values(mockData.students).flat().find(s => s.id === appState.currentUser.studentId);
+            mainContent.innerHTML = `
+                <h1 class="text-3xl font-bold mb-8">My Schedule</h1>
+                ${renderStudentSchedule(student.classId)}
+            `;
+        }
         
         function renderStudentSchedule(classId) {
             const schedule = mockData.schedule.filter(s => s.classId === classId);
@@ -2410,6 +2417,17 @@
             loginView.style.display = 'flex';
             mainAppView.style.display = 'none';
             loginForm.reset();
+            
+            // --- FIX STARTS HERE ---
+            // Reset the login form labels and placeholders to their default state
+            document.getElementById('loginIdLabel').textContent = 'Email';
+            document.getElementById('loginPasswordLabel').textContent = 'Password';
+            document.getElementById('loginId').placeholder = 'user@school.com';
+            document.getElementById('password').placeholder = 'password';
+            document.getElementById('loginHint').innerHTML = `<p>Use \`teacher@school.com\` or \`admin@school.com\`</p><p>Password: \`password\`</p>`;
+            document.getElementById('role').value = 'teacher'; // Reset dropdown to default
+            // --- FIX ENDS HERE ---
+
             loginError.classList.add('hidden');
         }
 
